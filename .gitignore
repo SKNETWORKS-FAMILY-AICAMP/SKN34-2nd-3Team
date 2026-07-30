@@ -176,3 +176,6 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python,dotenv
+
+# 데이터베이스 데이터 폴더 제외
+db/data/
