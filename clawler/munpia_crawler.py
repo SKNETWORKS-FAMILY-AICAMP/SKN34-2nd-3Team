@@ -13,7 +13,7 @@ START_ID = 1
 END_ID = 550000
 CONCURRENCY_LIMIT = 80     # 동시 요청 제한수 (너무 높이면 429 에러 발생)
 DELAY_BETWEEN_REQS = 0.01  # API 요청 간 지연 시간(초)
-DATA_DIR = "db/data"
+DATA_DIR = "data/raw"
 
 class OrderedCSVManager:
     """순차 저장을 보장하는 버퍼 기반 비동기 CSV 매니저"""
@@ -31,13 +31,35 @@ class OrderedCSVManager:
             "status_log": os.path.join(data_dir, "status_log.csv")
         }
         
+        # 명세서에 맞춘 컬럼명 적용 (crawl_status, source_http_status 등 추가)
         self.headers = {
-            "works": ["work_id", "source_url", "title", "author_name", "illustrator_name", "introduction", "cover_url", "origin_cover_url", "group_name", "genres_json", "tags_json", "genre_best_name", "genre_best_code", "free", "paid_serial", "exclusive", "pre_exclusive", "adult", "contest", "rental", "pause", "finish", "epub", "ebook", "cp_novel", "view_count", "preference_count", "like_count", "chapter_count", "free_chapter_count", "characters", "created_at", "updated_at", "paid_conversion_open_at", "isbn", "period", "unit_type", "male_count", "female_count", "age_10s_percent", "age_20s_percent", "age_30s_percent", "age_40s_percent", "age_50s_percent", "notice_count", "notices_json", "events_json", "collected_at"],
-            "episodes": ["work_id", "episode_id", "episode_number", "episode_title", "published_at", "access_type", "view_count", "like_count", "comment_count", "page_count", "adult", "paid_conversion_before_entry", "up", "collected_at", "source_url"],
-            "comments": ["work_id", "episode_id", "comment_id", "parent_comment_id", "reply_level", "content_type", "comment_text", "like_count", "dislike_count", "created_at", "secret", "report_status", "block_status", "collected_at"],
+            "works": [
+                "work_id", "source_url", "title", "author_name", "illustrator_name", "introduction", 
+                "cover_url", "origin_cover_url", "group_name", "genres_json", "tags_json", 
+                "genre_best_name", "genre_best_code", "free", "paid_serial", "exclusive", 
+                "pre_exclusive", "adult", "contest", "rental", "pause", "finish", "epub", "ebook", 
+                "cp_novel", "view_count", "preference_count", "like_count", "chapter_count", 
+                "free_chapter_count", "characters", "created_at", "updated_at", "paid_conversion_open_at", 
+                "isbn", "period", "unit_type", "male_count", "female_count", "age_10s_percent", 
+                "age_20s_percent", "age_30s_percent", "age_40s_percent", "age_50s_percent", 
+                "notice_count", "notices_json", "events_json", "collected_at", "crawl_status", "source_http_status"
+            ],
+            "episodes": [
+                "work_id", "episode_id", "episode_number", "episode_title", "published_at", 
+                "access_type", "view_count", "like_count", "comment_count", "page_count", "adult", 
+                "paid_conversion_before_entry", "up", "collected_at", "source_url", "crawl_status"
+            ],
+            "comments": [
+                "work_id", "episode_id", "comment_id", "parent_comment_id", "reply_level", 
+                "content_type", "comment_text", "like_count", "dislike_count", "created_at", 
+                "secret", "report_status", "block_status", "collected_at", "crawl_status"
+            ],
             "genres": ["genre_name", "genre_best_code", "genre_best_name", "first_seen_work_id", "collected_at"],
             "tags": ["tag_id", "tag_name", "first_seen_work_id", "collected_at"],
-            "status_log": ["candidate_work_id", "source_url", "http_status", "parse_status", "failure_type", "attempt_count", "last_attempt_at", "accepted"]
+            "status_log": [
+                "candidate_work_id", "source_url", "http_status", "parse_status", 
+                "failure_type", "attempt_count", "last_attempt_at", "accepted"
+            ]
         }
         self._init_files_sync()
         
@@ -96,7 +118,6 @@ class OrderedCSVManager:
 
     def _write_to_csv(self, data):
         """실제 CSV 파일에 Append 기록"""
-        # 성공 시 메타/회차/댓글/장르/태그 기록
         if data['type'] == 'SUCCESS':
             with open(self.files["works"], 'a', encoding='utf-8-sig', newline='') as f:
                 csv.DictWriter(f, fieldnames=self.headers["works"]).writerow(data['work'])
@@ -145,7 +166,7 @@ class MunpiaAsyncCrawler:
                 queue.put_nowait(wid)
                 queued_count += 1
                 
-        print(f" 비동기 순차 수집 시작 (대기열: {queued_count}개 작품) | 동시성: {CONCURRENCY_LIMIT}")
+        print(f"🚀 비동기 순차 수집 시작 (대기열: {queued_count}개 작품) | 동시성: {CONCURRENCY_LIMIT}")
 
         timeout = aiohttp.ClientTimeout(total=30)
         async with aiohttp.ClientSession(headers=self.headers, timeout=timeout) as session:
@@ -173,13 +194,16 @@ class MunpiaAsyncCrawler:
                 result = {
                     'type': 'FAIL',
                     'log': {
-                        "candidate_work_id": work_id, "source_url": f"https://www.munpia.com/novel/detail/{work_id}",
-                        "http_status": "", "parse_status": "FAIL", "failure_type": f"FATAL_ERROR: {str(e)[:50]}",
-                        "attempt_count": 1, "last_attempt_at": datetime.now().isoformat(), "accepted": "N"
+                        "candidate_work_id": work_id, 
+                        "source_url": f"https://www.munpia.com/novel/detail/{work_id}",
+                        "http_status": "", "parse_status": "FAIL", 
+                        "failure_type": f"FATAL_ERROR: {str(e)[:50]}",
+                        "attempt_count": 1, "last_attempt_at": datetime.now().isoformat(), 
+                        "accepted": "N"
                     }
                 }
             
-            # 수집 결과를 DB 매니저에 넘김 (순서 맞으면 쓰기, 아니면 버퍼 대기)
+            # 수집 결과를 DB 매니저에 넘김
             await self.db.push_result(work_id, result)
             queue.task_done()
             
@@ -196,6 +220,7 @@ class MunpiaAsyncCrawler:
             "attempt_count": 1, "last_attempt_at": collected_at, "accepted": "N"
         }
 
+        # 1. 작품 상세 기본 정보 수집
         try:
             url = f"https://www.munpia.com/api/v1/pc/novel-detail/{work_id}"
             async with session.get(url) as res:
@@ -221,6 +246,19 @@ class MunpiaAsyncCrawler:
         except Exception as e:
             log_data["failure_type"] = f"WORK_EXCEPTION: {str(e)[:50]}"
             return {'type': 'FAIL', 'log': log_data}
+
+        # 2. 작품 독자 통계 정보 수집
+        stats_data = {}
+        try:
+            stat_url = f"https://www.munpia.com/api/v1/pc/novel-detail/{work_id}/read-statistics"
+            async with session.get(stat_url) as stat_res:
+                if stat_res.status == 200:
+                    stat_json = await stat_res.json()
+                    if stat_json.get("code") == "M000_00000" and stat_json.get("result"):
+                        stats_data = stat_json["result"]
+        except Exception:
+            # 통계 데이터 수집 실패 시 빈 값 처리 진행
+            pass
 
         def parse_stat(val):
             return val if val is not None else ""
@@ -248,12 +286,19 @@ class MunpiaAsyncCrawler:
             "created_at": novel.get("createdAt", ""), "updated_at": novel.get("updatedAt", ""),
             "paid_conversion_open_at": novel.get("paidConversionOpenAt", ""), "isbn": novel.get("isbn", ""),
             "period": novel.get("period", ""), "unit_type": novel.get("unitType", ""),
-            "male_count": "", "female_count": "", "age_10s_percent": "", "age_20s_percent": "",
-            "age_30s_percent": "", "age_40s_percent": "", "age_50s_percent": "",
+            "male_count": parse_stat(stats_data.get("maleCount")),
+            "female_count": parse_stat(stats_data.get("femaleCount")),
+            "age_10s_percent": parse_stat(stats_data.get("age10sPercent")),
+            "age_20s_percent": parse_stat(stats_data.get("age20sPercent")),
+            "age_30s_percent": parse_stat(stats_data.get("age30sPercent")),
+            "age_40s_percent": parse_stat(stats_data.get("age40sPercent")),
+            "age_50s_percent": parse_stat(stats_data.get("age50sPercent")),
             "notice_count": result.get("noticeInfo", {}).get("count", 0),
             "notices_json": json.dumps(result.get("noticeInfo", {}).get("list", []), ensure_ascii=False),
             "events_json": json.dumps(result.get("events", []), ensure_ascii=False),
-            "collected_at": collected_at
+            "collected_at": collected_at,
+            "crawl_status": "SUCCESS",
+            "source_http_status": log_data["http_status"]
         }
 
         genres_data = [[g, genre_best_code, genre_best_name, work_id, collected_at] for g in genres]
@@ -262,6 +307,7 @@ class MunpiaAsyncCrawler:
         episodes_data = []
         comments_data = []
         
+        # 3. 회차 및 댓글 정보 수집
         try:
             page = 1
             while True:
@@ -288,7 +334,8 @@ class MunpiaAsyncCrawler:
                         "like_count": parse_stat(ch.get("likeCount")), "comment_count": parse_stat(ch.get("commentCount")),
                         "page_count": parse_stat(ch.get("pages")), "adult": ch.get("adult", ""),
                         "paid_conversion_before_entry": ch.get("paidConversionBeforeEntry", ""),
-                        "up": ch.get("up", ""), "collected_at": collected_at, "source_url": source_url
+                        "up": ch.get("up", ""), "collected_at": collected_at, "source_url": source_url,
+                        "crawl_status": "SUCCESS"
                     })
 
                     if access_type == "FREE":
@@ -337,7 +384,8 @@ class MunpiaAsyncCrawler:
                     "comment_text": c.get("content", ""), "like_count": c.get("likeCount", ""),
                     "dislike_count": c.get("dislikeCount", ""), "created_at": c.get("createdAt", ""),
                     "secret": c.get("secret", ""), "report_status": c.get("report", ""),
-                    "block_status": c.get("block", ""), "collected_at": collected_at
+                    "block_status": c.get("block", ""), "collected_at": collected_at,
+                    "crawl_status": "SUCCESS"
                 })
                 
             if c_page >= c_result.get("totalPages", 1): break
