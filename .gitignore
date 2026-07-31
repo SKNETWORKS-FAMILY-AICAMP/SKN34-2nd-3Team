@@ -179,3 +179,5 @@ pyrightconfig.json
 
 # 데이터베이스 데이터 폴더 제외
 db/data/
+
+2nd_project/
