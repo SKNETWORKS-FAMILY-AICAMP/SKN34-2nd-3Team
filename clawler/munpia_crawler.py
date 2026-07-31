@@ -28,10 +28,10 @@ class OrderedCSVManager:
             "comments": os.path.join(data_dir, "comments.csv"),
             "genres": os.path.join(data_dir, "genres.csv"),
             "tags": os.path.join(data_dir, "tags.csv"),
+            "authors": os.path.join(data_dir, "authors.csv"),  # 작가 정보 CSV 추가
             "status_log": os.path.join(data_dir, "status_log.csv")
         }
         
-        # 명세서에 맞춘 컬럼명 적용 (crawl_status, source_http_status 등 추가)
         self.headers = {
             "works": [
                 "work_id", "source_url", "title", "author_name", "illustrator_name", "introduction", 
@@ -56,6 +56,16 @@ class OrderedCSVManager:
             ],
             "genres": ["genre_name", "genre_best_code", "genre_best_name", "first_seen_work_id", "collected_at"],
             "tags": ["tag_id", "tag_name", "first_seen_work_id", "collected_at"],
+            # 작가 서재 API Response 기반 컬럼 명세
+            "authors": [
+                "work_id", "blogUrl", "blogId", "blogMemberId", "authorName", "profileImage", 
+                "titleImage", "describe", "commentAllow", "guestAllow", "fanArtAllow", 
+                "boardAllow", "commentTapAllow", "openedPrefer", "seriallyCount", 
+                "seriallyData_json", "sameUserIdWithNickname", "userIdExposure", "munStarGradeType", 
+                "memberId", "memberProfileImage", "isAuthor", "contentProvider", "admin", 
+                "newbie", "selfVerification", "adult", "adultVerification", "adultVerificationExpired", 
+                "blockAccess", "blockNovel", "mainProfile", "comicContentProvider", "collected_at"
+            ],
             "status_log": [
                 "candidate_work_id", "source_url", "http_status", "parse_status", 
                 "failure_type", "attempt_count", "last_attempt_at", "accepted"
@@ -66,6 +76,7 @@ class OrderedCSVManager:
         # 캐시 및 순차 제어 변수
         self.seen_genres = self._load_existing_keys("genres", "genre_name")
         self.seen_tags = self._load_existing_keys("tags", "tag_id")
+        self.seen_authors = self._load_existing_keys("authors", "blogUrl")  # 중복 작가 수집 방지용
         self.processed_works = self._load_existing_keys("status_log", "candidate_work_id")
         
         self.buffer = {}              # 수집 완료된 결과를 담는 임시 딕셔너리
@@ -87,7 +98,8 @@ class OrderedCSVManager:
                 if column_name in reader.fieldnames:
                     for row in reader:
                         val = row[column_name]
-                        keys.add(int(val) if val.isdigit() else val)
+                        if val:
+                            keys.add(int(val) if val.isdigit() else val)
         return keys
 
     def _advance_expected_id(self):
@@ -100,14 +112,13 @@ class OrderedCSVManager:
         async with self.lock:
             self.buffer[work_id] = result_data
             
-            # expected_id가 버퍼에 도착했다면 즉시 파일에 쓰고 다음 순번 확인
             while self.expected_id in self.buffer:
                 data = self.buffer.pop(self.expected_id)
                 self._write_to_csv(data)
                 
-                # 순서대로 로그 출력
                 if data['type'] == 'SUCCESS':
-                    print(f"✅ [순차저장] 작품 {self.expected_id} | 회차: {len(data['episodes'])}개 | 댓글: {len(data['comments'])}개")
+                    has_author = "O" if data.get('author') else "X"
+                    print(f"✅ [순차저장] 작품 {self.expected_id} | 회차: {len(data['episodes'])}개 | 작가정보: {has_author}")
                 else:
                     fail_reason = data['log']['failure_type']
                     print(f"❌ [순차저장] 작품 {self.expected_id} | 실패/비공개: {fail_reason}")
@@ -145,8 +156,16 @@ class OrderedCSVManager:
                         if t[0] not in self.seen_tags:
                             writer.writerow(t)
                             self.seen_tags.add(t[0])
+
+            # 작가 정보 저장 (중복 blogUrl이 아닌 경우에만 저장)
+            if data.get('author'):
+                blog_url = data['author'].get('blogUrl')
+                if blog_url and blog_url not in self.seen_authors:
+                    with open(self.files["authors"], 'a', encoding='utf-8-sig', newline='') as f:
+                        csv.DictWriter(f, fieldnames=self.headers["authors"]).writerow(data['author'])
+                    self.seen_authors.add(blog_url)
                             
-        # 성공/실패 여부 상관없이 Status Log 기록
+        # Status Log 기록
         with open(self.files["status_log"], 'a', encoding='utf-8-sig', newline='') as f:
             csv.DictWriter(f, fieldnames=self.headers["status_log"]).writerow(data['log'])
 
@@ -187,10 +206,8 @@ class MunpiaAsyncCrawler:
                 break
 
             try:
-                # 데이터 수집 (성공/실패 Dictionary 반환)
                 result = await self.process_single_work(work_id, session)
             except Exception as e:
-                # 크래시 방지용 긴급 에러 반환
                 result = {
                     'type': 'FAIL',
                     'log': {
@@ -203,12 +220,73 @@ class MunpiaAsyncCrawler:
                     }
                 }
             
-            # 수집 결과를 DB 매니저에 넘김
             await self.db.push_result(work_id, result)
             queue.task_done()
-            
-            # 부하 방지
             await asyncio.sleep(DELAY_BETWEEN_REQS)
+
+    async def fetch_author_info(self, session, blog_url, work_id, collected_at):
+        """요청하신 Header 정보를 포함하여 작가 서재 API를 호출합니다."""
+        if not blog_url:
+            return None
+
+        url = "https://library.munpia.com/api/library/info"
+        headers = {
+            "blogUrl": blog_url,
+            "Referer": f"https://library.munpia.com/{blog_url}",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0",
+            "Accept": "application/json, text/plain, */*",
+        }
+
+        try:
+            async with session.get(url, headers=headers) as res:
+                if res.status != 200:
+                    return None
+                
+                json_data = await res.json()
+                bp = json_data.get("blogProfile", {})
+                mi = json_data.get("memberInfo", {})
+
+                if not bp and not mi:
+                    return None
+
+                return {
+                    "work_id": work_id,
+                    "blogUrl": bp.get("blogUrl", blog_url),
+                    "blogId": bp.get("blogId", ""),
+                    "blogMemberId": bp.get("blogMemberId", ""),
+                    "authorName": bp.get("authorName", ""),
+                    "profileImage": bp.get("profileImage", ""),
+                    "titleImage": bp.get("titleImage", ""),
+                    "describe": bp.get("describe", ""),
+                    "commentAllow": bp.get("commentAllow", ""),
+                    "guestAllow": bp.get("guestAllow", ""),
+                    "fanArtAllow": bp.get("fanArtAllow", ""),
+                    "boardAllow": bp.get("boardAllow", ""),
+                    "commentTapAllow": bp.get("commentTapAllow", ""),
+                    "openedPrefer": bp.get("openedPrefer", ""),
+                    "seriallyCount": bp.get("seriallyCount", ""),
+                    "seriallyData_json": json.dumps(bp.get("seriallyData", {}), ensure_ascii=False),
+                    "sameUserIdWithNickname": bp.get("sameUserIdWithNickname", ""),
+                    "userIdExposure": bp.get("userIdExposure", ""),
+                    "munStarGradeType": bp.get("munStarGradeType", ""),
+                    "memberId": mi.get("memberId", ""),
+                    "memberProfileImage": mi.get("profileImage", ""),
+                    "isAuthor": mi.get("author", ""),
+                    "contentProvider": mi.get("contentProvider", ""),
+                    "admin": mi.get("admin", ""),
+                    "newbie": mi.get("newbie", ""),
+                    "selfVerification": mi.get("selfVerification", ""),
+                    "adult": mi.get("adult", ""),
+                    "adultVerification": mi.get("adultVerification", ""),
+                    "adultVerificationExpired": mi.get("adultVerificationExpired", ""),
+                    "blockAccess": mi.get("blockAccess", ""),
+                    "blockNovel": mi.get("blockNovel", ""),
+                    "mainProfile": mi.get("mainProfile", ""),
+                    "comicContentProvider": mi.get("comicContentProvider", ""),
+                    "collected_at": collected_at
+                }
+        except Exception:
+            return None
 
     async def process_single_work(self, work_id, session):
         collected_at = datetime.now().isoformat()
@@ -242,12 +320,18 @@ class MunpiaAsyncCrawler:
 
             result = data["result"]
             novel = result.get("novelInfo", {})
+            blog_url = result.get("blogUrl", "")
             
         except Exception as e:
             log_data["failure_type"] = f"WORK_EXCEPTION: {str(e)[:50]}"
             return {'type': 'FAIL', 'log': log_data}
 
-        # 2. 작품 독자 통계 정보 수집
+        # 2. 작가 서재 정보 수집 (blogUrl이 존재할 경우 실행)
+        author_data = None
+        if blog_url:
+            author_data = await self.fetch_author_info(session, blog_url, work_id, collected_at)
+
+        # 3. 작품 독자 통계 정보 수집
         stats_data = {}
         try:
             stat_url = f"https://www.munpia.com/api/v1/pc/novel-detail/{work_id}/read-statistics"
@@ -257,7 +341,6 @@ class MunpiaAsyncCrawler:
                     if stat_json.get("code") == "M000_00000" and stat_json.get("result"):
                         stats_data = stat_json["result"]
         except Exception:
-            # 통계 데이터 수집 실패 시 빈 값 처리 진행
             pass
 
         def parse_stat(val):
@@ -307,7 +390,7 @@ class MunpiaAsyncCrawler:
         episodes_data = []
         comments_data = []
         
-        # 3. 회차 및 댓글 정보 수집
+        # 4. 회차 및 댓글 정보 수집
         try:
             page = 1
             while True:
@@ -354,8 +437,14 @@ class MunpiaAsyncCrawler:
         log_data["accepted"] = "Y"
         
         return {
-            'type': 'SUCCESS', 'work': work_row, 'episodes': episodes_data, 
-            'comments': comments_data, 'genres': genres_data, 'tags': tags_data, 'log': log_data
+            'type': 'SUCCESS', 
+            'work': work_row, 
+            'episodes': episodes_data, 
+            'comments': comments_data, 
+            'genres': genres_data, 
+            'tags': tags_data, 
+            'author': author_data,  # 작가 데이터 추가
+            'log': log_data
         }
 
     async def fetch_comments(self, session, work_id, episode_id, collected_at):
