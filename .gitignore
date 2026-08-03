@@ -176,3 +176,20 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python,dotenv
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Virtual environments
+project2_venv/
+venv/
+.venv/
+
+# Local CSV datasets
+db/data/*.csv
+
+# Archives and backups
+db/data/*.zip
+*.zip
+*before_author_sync*.csv
