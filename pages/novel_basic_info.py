@@ -174,7 +174,7 @@ class SampleNovelRepository(NovelRepository):
         row = self._get_work_row(novel_id)
         if not row: return []
         genres = []
-        # 백엔드(데이터) 쪽에서는 '1차', '2차'를 채워줌
+        # 백엔드(데이터)쪽에서는 '1차', '2차'를 채워줌
         if pd.notna(row.get('genre_best_name')):
             genres.append(NovelGenre(novel_id, '1차', str(row['genre_best_name'])))
         if pd.notna(row.get('genres_json')):
