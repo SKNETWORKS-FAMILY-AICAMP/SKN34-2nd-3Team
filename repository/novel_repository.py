@@ -57,22 +57,26 @@ class CsvNovelRepository(NovelRepository):
 
     def get_novel(self, novel_id: int) -> Novel | None:
         row = self._find_work_row(novel_id)
-        if row is None: return None
+        if row is None:
+            return None
         self._validate_columns(row.index, NOVEL_REQUIRED_COLUMNS, "works.csv")
         return self._row_to_novel(row)
 
     def get_novel_statistics(self, novel_id: int) -> NovelStatistics | None:
         row = self._find_work_row(novel_id)
-        if row is None: return None
+        if row is None:
+            return None
         self._validate_columns(row.index, STATISTICS_REQUIRED_COLUMNS, "works.csv")
         return self._row_to_novel_statistics(row)
 
     def get_author(self, novel_id: int) -> NovelAuthor | None:
         novel = self.get_novel(novel_id)
-        if novel is None or novel.author_id is None: return None
+        if novel is None or novel.author_id is None:
+            return None
         
         author_id = novel.author_id
-        if author_id in self._author_cache: return self._author_cache[author_id]
+        if author_id in self._author_cache:
+            return self._author_cache[author_id]
         
         self._ensure_csv_file(self.authors_csv_path)
         self._validate_csv_header(self.authors_csv_path, AUTHOR_REQUIRED_COLUMNS, "authors.csv")
@@ -97,7 +101,8 @@ class CsvNovelRepository(NovelRepository):
         return author
 
     def get_episodes(self, novel_id: int) -> list[Episode]:
-        if novel_id in self._episode_cache: return self._episode_cache[novel_id]
+        if novel_id in self._episode_cache:
+            return self._episode_cache[novel_id]
         rows = self._read_rows_by_work_id(self.episodes_csv_path, EPISODE_REQUIRED_COLUMNS, novel_id, "episodes.csv")
         if rows.empty:
             self._episode_cache[novel_id] = []
@@ -108,7 +113,8 @@ class CsvNovelRepository(NovelRepository):
         return episodes
 
     def get_comments(self, novel_id: int) -> list[Comment]:
-        if novel_id in self._comment_cache: return self._comment_cache[novel_id]
+        if novel_id in self._comment_cache:
+            return self._comment_cache[novel_id]
         rows = self._read_rows_by_work_id(self.comments_csv_path, COMMENT_REQUIRED_COLUMNS, novel_id, "comments.csv")
         if rows.empty:
             self._comment_cache[novel_id] = []
@@ -146,25 +152,22 @@ class CsvNovelRepository(NovelRepository):
         self._ensure_csv_file(csv_path)
         self._validate_csv_header(csv_path, columns, csv_name)
         matched_chunks = []
-        found_target = False
         try:
             for chunk in pd.read_csv(csv_path, usecols=sorted(columns), dtype={"work_id": "int64"}, chunksize=self.child_chunk_size, engine="c", low_memory=False, memory_map=True):
-                if chunk.empty: continue
+                if chunk.empty:
+                    continue
                 work_ids = chunk["work_id"]
-                if int(work_ids.iloc[-1]) < novel_id: continue
-                if int(work_ids.iloc[0]) > novel_id: break
                 matched_rows = chunk[work_ids == novel_id]
                 if not matched_rows.empty:
-                    found_target = True
                     matched_chunks.append(matched_rows.copy())
-                if found_target and int(work_ids.iloc[-1]) > novel_id: break
         except pd.errors.EmptyDataError as exc:
             raise CsvFileError(f"CSV 파일이 비어 있습니다: {csv_path}") from exc
         except OSError as exc:
             raise CsvFileError(f"{csv_name}을 읽을 수 없습니다: {exc}") from exc
         except (ValueError, TypeError) as exc:
             raise CsvSchemaError(f"{csv_name} 처리 중 오류가 발생했습니다: {exc}") from exc
-        if not matched_chunks: return pd.DataFrame(columns=sorted(columns))
+        if not matched_chunks:
+            return pd.DataFrame(columns=sorted(columns))
         return pd.concat(matched_chunks, ignore_index=True)
 
     def _ensure_csv_file(self, path: Path) -> None:
