@@ -10,11 +10,12 @@ from entity.episode import Episode
 from entity.novel import Novel
 from entity.novel_author import NovelAuthor
 from entity.novel_statistics import NovelStatistics
+from repository.novel_repository import CsvNovelRepository
 from service import novel_service as novel_service_module
-from service.novel_service import (
+from service.novel_service import NovelService
+from service.novel_service_errors import (
     CsvSchemaError,
     InvalidNovelInputError,
-    NovelService,
 )
 
 
@@ -250,7 +251,7 @@ def service(tmp_path) -> NovelService:
         index=False,
     )
 
-    return NovelService(
+    repository = CsvNovelRepository(
         works_csv_path=works_path,
         authors_csv_path=authors_path,
         episodes_csv_path=episodes_path,
@@ -258,6 +259,8 @@ def service(tmp_path) -> NovelService:
         works_chunk_size=1,
         child_chunk_size=1,
     )
+
+    return NovelService(repository=repository)
 
 
 def test_parse_numeric_id(
@@ -470,12 +473,13 @@ def test_missing_required_column_raises_error(
         index=False,
     )
 
-    broken_service = NovelService(
+    repository = CsvNovelRepository(
         works_csv_path=works_path,
         authors_csv_path=authors_path,
         episodes_csv_path=episodes_path,
         comments_csv_path=comments_path,
     )
+    broken_service = NovelService(repository=repository)
 
     with pytest.raises(CsvSchemaError):
         broken_service.get_novel(123)
@@ -555,12 +559,13 @@ def test_missing_author_column_raises_error(
         index=False,
     )
 
-    broken_service = NovelService(
+    repository = CsvNovelRepository(
         works_csv_path=works_path,
         authors_csv_path=authors_path,
         episodes_csv_path=episodes_path,
         comments_csv_path=comments_path,
     )
+    broken_service = NovelService(repository=repository)
 
     with pytest.raises(CsvSchemaError):
         broken_service.get_author(123)
