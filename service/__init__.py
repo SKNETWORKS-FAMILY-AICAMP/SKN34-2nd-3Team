@@ -1,11 +1,10 @@
-from service.novel_service import (
+from service.novel_service import NovelService
+from service.novel_service_errors import (
     CsvFileError,
     CsvSchemaError,
     InvalidNovelInputError,
-    NovelService,
     NovelServiceError,
 )
-
 
 __all__ = [
     "NovelService",
