@@ -1,24 +1,25 @@
 from dataclasses import asdict
 from pathlib import Path
+import asyncio
 
 import pandas as pd
 import streamlit as st
 
-from repository.novel_repository import CsvNovelRepository
-from service import NovelService, NovelServiceError
+from repository.collection_repository import CsvCollectionRepository
+from service import CollectionService, NovelServiceError
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "db" / "data"
 
 
-repository = CsvNovelRepository(
+collection_repository = CsvCollectionRepository(
     works_csv_path=DATA_DIR / "works.csv",
     authors_csv_path=DATA_DIR / "authors.csv",
     episodes_csv_path=DATA_DIR / "episodes.csv",
     comments_csv_path=DATA_DIR / "comments.csv",
 )
-service = NovelService(repository=repository)
+collection_service = CollectionService(repository=collection_repository)
 
 
 st.set_page_config(
@@ -57,7 +58,7 @@ st.markdown(
         border-bottom: 2px solid #3b82f6;
     ">
         <h2 style="margin: 0; color: white;">
-            📚 문피아 작품 & 작가 데이터 조회
+            📚 문피아 작품 & 작가 데이터 수집
         </h2>
     </div>
     """,
@@ -94,75 +95,41 @@ raw_input = st.text_input(
 
 
 if st.button(
-    "데이터 조회",
+    "공개 데이터 수집",
     type="primary",
 ):
+    status_box = None
     try:
-        novel_id = service.parse_novel_id(raw_input)
+        novel_id = collection_service.parse_novel_id(raw_input)
 
         with st.status(
-            f"작품 ID {novel_id} 조회 중...",
+            f"작품 ID {novel_id} 수집 중...",
             expanded=True,
         ) as status_box:
-            novel = service.get_novel(novel_id)
+            result = asyncio.run(collection_service.collect(raw_input))
 
-            if novel is None:
-                st.session_state.novel = None
-                st.session_state.statistics = None
-                st.session_state.author = None
-                st.session_state.episodes = []
-                st.session_state.comments = []
+            st.session_state.novel = result.novel
+            st.session_state.statistics = result.statistics
+            st.session_state.author = result.author
+            st.session_state.episodes = result.episodes
+            st.session_state.comments = result.comments
+            st.session_state.current_view = "work"
 
-                status_box.update(
-                    label="❌ 작품을 찾을 수 없습니다.",
-                    state="error",
-                    expanded=False,
-                )
-
-                st.error(
-                    "해당 작품을 찾을 수 없습니다."
-                )
-
-            else:
-                statistics = (
-                    service.get_novel_statistics(
-                        novel_id
-                    )
-                )
-
-                author = service.get_author(
-                    novel_id
-                )
-
-                episodes = service.get_episodes(
-                    novel_id
-                )
-
-                comments = service.get_comments(
-                    novel_id
-                )
-
-                st.session_state.novel = novel
-                st.session_state.statistics = statistics
-                st.session_state.author = author
-                st.session_state.episodes = episodes
-                st.session_state.comments = comments
-                st.session_state.current_view = "work"
-
-                status_box.update(
-                    label="✅ 데이터 조회 완료!",
-                    state="complete",
-                    expanded=False,
-                )
-
-                st.success(
-                    f"'{novel.title}' 조회를 완료했습니다."
-                )
+            status_box.update(
+                label="✅ 공개 데이터 수집 완료!",
+                state="complete",
+                expanded=False,
+            )
+            st.success(f"'{result.novel.title}' 수집을 완료했습니다.")
 
     except NovelServiceError as exc:
+        if status_box is not None:
+            status_box.update(label="❌ 공개 데이터 수집 실패", state="error")
         st.error(str(exc))
 
     except Exception as exc:
+        if status_box is not None:
+            status_box.update(label="❌ 공개 데이터 수집 실패", state="error")
         st.error(
             f"예상하지 못한 오류가 발생했습니다: {exc}"
         )

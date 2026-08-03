@@ -15,6 +15,15 @@ CONCURRENCY_LIMIT = 80     # 동시 요청 제한수 (너무 높이면 429 에�
 DELAY_BETWEEN_REQS = 0.01  # API 요청 간 지연 시간(초)
 DATA_DIR = "data/raw"
 
+
+class CrawlStageError(Exception):
+    """하위 API의 실패를 부분 수집 성공과 구분해 전달한다."""
+
+    def __init__(self, failure_type, http_status=""):
+        super().__init__(failure_type)
+        self.failure_type = failure_type
+        self.http_status = http_status
+
 class OrderedCSVManager:
     """순차 저장을 보장하는 버퍼 기반 비동기 CSV 매니저"""
     def __init__(self, data_dir, start_id):
@@ -240,14 +249,22 @@ class MunpiaAsyncCrawler:
         try:
             async with session.get(url, headers=headers) as res:
                 if res.status != 200:
-                    return None
-                
-                json_data = await res.json()
+                    raise CrawlStageError(f"AUTHOR_HTTP_{res.status}", res.status)
+
+                try:
+                    json_data = await res.json()
+                except Exception as e:
+                    raise CrawlStageError(f"AUTHOR_JSON_ERROR: {str(e)[:50]}", res.status) from e
+                if json_data.get("code") not in (None, "M000_00000"):
+                    code = json_data.get("code")
+                    message = json_data.get("message", "invalid result")
+                    raise CrawlStageError(f"AUTHOR_API_{code}: {message}", res.status)
+
                 bp = json_data.get("blogProfile", {})
                 mi = json_data.get("memberInfo", {})
 
                 if not bp and not mi:
-                    return None
+                    raise CrawlStageError("AUTHOR_API_INVALID_RESULT", res.status)
 
                 return {
                     "work_id": work_id,
@@ -285,8 +302,10 @@ class MunpiaAsyncCrawler:
                     "comicContentProvider": mi.get("comicContentProvider", ""),
                     "collected_at": collected_at
                 }
-        except Exception:
-            return None
+        except CrawlStageError:
+            raise
+        except Exception as e:
+            raise CrawlStageError(f"AUTHOR_NETWORK_ERROR: {str(e)[:50]}") from e
 
     async def process_single_work(self, work_id, session):
         collected_at = datetime.now().isoformat()
@@ -312,7 +331,11 @@ class MunpiaAsyncCrawler:
                     log_data["failure_type"] = f"HTTP_{res.status}"
                     return {'type': 'FAIL', 'log': log_data}
 
-                data = await res.json()
+                try:
+                    data = await res.json()
+                except Exception as e:
+                    log_data["failure_type"] = f"DETAIL_JSON_ERROR: {str(e)[:50]}"
+                    return {'type': 'FAIL', 'log': log_data}
                 
             if data.get("code") != "M000_00000" or not data.get("result"):
                 log_data["failure_type"] = data.get("message", "NOT_FOUND_OR_PRIVATE")
@@ -329,19 +352,36 @@ class MunpiaAsyncCrawler:
         # 2. 작가 서재 정보 수집 (blogUrl이 존재할 경우 실행)
         author_data = None
         if blog_url:
-            author_data = await self.fetch_author_info(session, blog_url, work_id, collected_at)
+            try:
+                author_data = await self.fetch_author_info(session, blog_url, work_id, collected_at)
+            except CrawlStageError as e:
+                log_data["http_status"] = e.http_status
+                log_data["failure_type"] = e.failure_type
+                return {'type': 'FAIL', 'log': log_data}
 
         # 3. 작품 독자 통계 정보 수집
         stats_data = {}
         try:
             stat_url = f"https://www.munpia.com/api/v1/pc/novel-detail/{work_id}/read-statistics"
             async with session.get(stat_url) as stat_res:
-                if stat_res.status == 200:
+                if stat_res.status != 200:
+                    raise CrawlStageError(f"STATISTICS_HTTP_{stat_res.status}", stat_res.status)
+                try:
                     stat_json = await stat_res.json()
-                    if stat_json.get("code") == "M000_00000" and stat_json.get("result"):
-                        stats_data = stat_json["result"]
-        except Exception:
-            pass
+                except Exception as e:
+                    raise CrawlStageError(f"STATISTICS_JSON_ERROR: {str(e)[:50]}", stat_res.status) from e
+                if stat_json.get("code") != "M000_00000" or stat_json.get("result") is None:
+                    code = stat_json.get("code", "UNKNOWN")
+                    message = stat_json.get("message", "invalid result")
+                    raise CrawlStageError(f"STATISTICS_API_{code}: {message}", stat_res.status)
+                stats_data = stat_json["result"]
+        except CrawlStageError as e:
+            log_data["http_status"] = e.http_status
+            log_data["failure_type"] = e.failure_type
+            return {'type': 'FAIL', 'log': log_data}
+        except Exception as e:
+            log_data["failure_type"] = f"STATISTICS_NETWORK_ERROR: {str(e)[:50]}"
+            return {'type': 'FAIL', 'log': log_data}
 
         def parse_stat(val):
             return val if val is not None else ""
@@ -394,17 +434,31 @@ class MunpiaAsyncCrawler:
         try:
             page = 1
             while True:
-                if self.stop_event.is_set(): break
+                if self.stop_event.is_set():
+                    raise CrawlStageError("EPISODES_ABORTED_BY_STOP_EVENT")
                 
                 ep_url = f"https://www.munpia.com/api/v1/pc/novel-detail/{work_id}/chapters?order=ENTRY_FIRST&page={page}&size=100"
-                async with session.get(ep_url) as ep_res:
-                    if ep_res.status != 200: break
-                    ep_data = await ep_res.json()
+                try:
+                    async with session.get(ep_url) as ep_res:
+                        if ep_res.status != 200:
+                            raise CrawlStageError(f"EPISODES_PAGE_{page}_HTTP_{ep_res.status}", ep_res.status)
+                        try:
+                            ep_data = await ep_res.json()
+                        except Exception as e:
+                            raise CrawlStageError(f"EPISODES_PAGE_{page}_JSON_ERROR: {str(e)[:50]}", ep_res.status) from e
+                except CrawlStageError:
+                    raise
+                except Exception as e:
+                    raise CrawlStageError(f"EPISODES_PAGE_{page}_NETWORK_ERROR: {str(e)[:50]}") from e
                     
-                if ep_data.get("code") != "M000_00000": break
+                if ep_data.get("code") != "M000_00000" or ep_data.get("result") is None:
+                    code = ep_data.get("code", "UNKNOWN")
+                    message = ep_data.get("message", "invalid result")
+                    raise CrawlStageError(f"EPISODES_PAGE_{page}_API_{code}: {message}", ep_res.status)
                 
                 ch_list = ep_data.get("result", {}).get("list", [])
-                if not ch_list: break
+                if not ch_list:
+                    break
 
                 for ch in ch_list:
                     ep_id = ch.get("id")
@@ -425,10 +479,15 @@ class MunpiaAsyncCrawler:
                         comms = await self.fetch_comments(session, work_id, ep_id, collected_at)
                         comments_data.extend(comms)
 
-                if len(ch_list) < 100: break
+                if len(ch_list) < 100:
+                    break
                 page += 1
                 await asyncio.sleep(0.3)
                 
+        except CrawlStageError as e:
+            log_data["http_status"] = e.http_status
+            log_data["failure_type"] = e.failure_type
+            return {'type': 'FAIL', 'log': log_data}
         except Exception as e:
             log_data["failure_type"] = f"EPISODE_EXCEPTION: {str(e)[:50]}"
             return {'type': 'FAIL', 'log': log_data}
@@ -451,18 +510,43 @@ class MunpiaAsyncCrawler:
         c_page = 1
         c_data = []
         while True:
-            if self.stop_event.is_set(): break
+            if self.stop_event.is_set():
+                raise CrawlStageError(f"COMMENTS_EPISODE_{episode_id}_ABORTED_BY_STOP_EVENT")
             
             c_url = f"https://www.munpia.com/api/v1/pc/novel-detail/{work_id}/entries/{episode_id}/comments?order=LATEST&page={c_page}&size=100"
-            async with session.get(c_url) as c_res:
-                if c_res.status != 200: break
-                c_json = await c_res.json()
+            try:
+                async with session.get(c_url) as c_res:
+                    if c_res.status != 200:
+                        raise CrawlStageError(
+                            f"COMMENTS_EPISODE_{episode_id}_PAGE_{c_page}_HTTP_{c_res.status}",
+                            c_res.status,
+                        )
+                    try:
+                        c_json = await c_res.json()
+                    except Exception as e:
+                        raise CrawlStageError(
+                            f"COMMENTS_EPISODE_{episode_id}_PAGE_{c_page}_JSON_ERROR: {str(e)[:50]}",
+                            c_res.status,
+                        ) from e
+            except CrawlStageError:
+                raise
+            except Exception as e:
+                raise CrawlStageError(
+                    f"COMMENTS_EPISODE_{episode_id}_PAGE_{c_page}_NETWORK_ERROR: {str(e)[:50]}"
+                ) from e
                 
-            if c_json.get("code") != "M000_00000": break
+            if c_json.get("code") != "M000_00000" or c_json.get("result") is None:
+                code = c_json.get("code", "UNKNOWN")
+                message = c_json.get("message", "invalid result")
+                raise CrawlStageError(
+                    f"COMMENTS_EPISODE_{episode_id}_PAGE_{c_page}_API_{code}: {message}",
+                    c_res.status,
+                )
             
             c_result = c_json.get("result", {})
             c_list = c_result.get("list", [])
-            if not c_list: break
+            if not c_list:
+                break
                 
             for c in c_list:
                 parent_id = c.get("parentId")
@@ -477,7 +561,8 @@ class MunpiaAsyncCrawler:
                     "crawl_status": "SUCCESS"
                 })
                 
-            if c_page >= c_result.get("totalPages", 1): break
+            if c_page >= c_result.get("totalPages", 1):
+                break
             c_page += 1
             await asyncio.sleep(0.1)
             
