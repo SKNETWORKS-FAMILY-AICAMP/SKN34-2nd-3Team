@@ -7,9 +7,11 @@ sys.path.append(parent_dir)
 
 import streamlit as st
 import pandas as pd
+import altair as alt
 from dataclasses import asdict
 
 from service.novel_service import NovelService
+from service.novel_prediction_service import NovelPredictionService 
 from service.novel_service_errors import NovelServiceError
 from repository.novel_repository import CsvNovelRepository
 
@@ -24,7 +26,9 @@ def render_page():
             episodes_csv_path="./db/data/episodes.csv",
             comments_csv_path="./db/data/comments.csv"
         )
+   
         service = NovelService(repository=repository)
+        prediction_service = NovelPredictionService(repository=repository) 
     except Exception as e:
         st.error(f"서비스 초기화에 실패했습니다: {e}")
         return
@@ -42,7 +46,6 @@ def render_page():
     )
     
     is_clicked = st.button("조회")
-    
     should_search = False
     
     if is_clicked:
@@ -67,7 +70,6 @@ def render_page():
                 
             st.markdown("---")
             
-            # [영역 1] 작품 기본 정보
             col_img, col_info = st.columns([1, 4])
             with col_img:
                 if novel.origin_cover_url:
@@ -77,7 +79,6 @@ def render_page():
                 st.header(f"📘 {novel.title}")
                 st.write(f"**소설 ID:** {novel.novel_id} | **유료 연재 여부:** {'무료' if novel.free else '유료'}")
                 
-                # 작가 정보 조회
                 author = service.get_author(novel_id)
                 if author:
                     author_str = f"{author.author_name}(일러스트레이터)" if author.is_illustrator else author.author_name
@@ -90,7 +91,7 @@ def render_page():
                 if novel.source_url: 
                     st.markdown(f"🔗 [작품 원본 링크]({novel.source_url})")
             
-            # [영역 2] 통계 정보
+
             stats = service.get_novel_statistics(novel_id)
             if stats:
                 st.markdown("---")
@@ -99,8 +100,48 @@ def render_page():
                 col1.metric("총 조회수", f"{stats.view_count:,}" if stats.view_count is not None else "0")
                 col2.metric("선호작 수", f"{stats.preference_count:,}" if stats.preference_count is not None else "0")
                 col3.metric("총 회차", f"{stats.chapter_count:,}" if stats.chapter_count is not None else "0")
+
+
+            st.markdown("---")
+            st.subheader("📈 향후 조회수 예측 그래프")
             
-            # [영역 3] 회차 목록
+            prediction_result = prediction_service.get_prediction_data(novel_id)
+            
+            if prediction_result is not None:
+                pred_df, drop_rate = prediction_result
+                
+                if not pred_df.empty:
+                    st.metric(
+                        label="다음 화(예측 1화) 조회수 예상 낙폭",
+                        value=f"-{drop_rate}%",
+                        delta=f"최근 화 대비 {drop_rate}% 감소 예상",
+                        delta_color="inverse"
+                    )
+
+                    chart = alt.Chart(pred_df).mark_line(point=True).encode(
+                        x=alt.X("회차:Q", title="회차", scale=alt.Scale(zero=False)),
+                        y=alt.Y("조회수:Q", title="조회수"),
+                        color=alt.Color("구분:N", scale=alt.Scale(
+                            range=["#1f77b4", "#ff7f0e"] 
+                        )),
+                        strokeDash=alt.condition(
+                            alt.datum.구분 == "실제 조회수",
+                            alt.value([0]),     
+                            alt.value([5, 5])    
+                        )
+                    ).properties(height=400)
+                    
+                    st.altair_chart(chart, use_container_width=True)
+                    
+                    if novel.free:
+                        st.info("💡 위 그래프는 수집된 전체 작품의 무료 -> 유료 전환 데이터를 분석하여 도출된 **실제 평균 낙폭치**를 바탕으로, 해당 작품이 유료로 전환되었을 때의 예상 조회수를 시뮬레이션한 결과입니다.")
+                    else:
+                        st.info("💡 위 그래프는 수집된 전체 유료 작품 데이터를 분석하여 도출된 **자연 감소율(유지율)**을 바탕으로 시뮬레이션한 결과입니다.")
+                else:
+                    st.info("그래프를 렌더링하기 위한 데이터가 부족합니다.")
+            else:
+                st.info("그래프를 렌더링하기 위한 회차 데이터가 없습니다.")
+
             episodes = service.get_episodes(novel_id)
             st.markdown("---")
             st.subheader(f"📚 회차 목록 (총 {len(episodes)}화)")
@@ -111,7 +152,6 @@ def render_page():
             else:
                 st.info("빈 목록 (해당 작품의 회차 데이터가 없습니다.)")
                 
-            # [영역 4] 댓글 목록
             comments = service.get_comments(novel_id)
             st.markdown("---")
             st.subheader(f"💬 댓글 목록 (총 {len(comments)}개)")
