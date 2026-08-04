@@ -176,3 +176,36 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python,dotenv
+<<<<<<< HEAD
+=======
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Virtual environments
+project2_venv/
+venv/
+.venv/
+
+# Local CSV datasets
+db/data/*.csv
+
+# Archives and backups
+db/data/*.zip
+*.zip
+*before_author_sync*.csv
+
+# Local crawler data
+db/data/
+db/audit/
+
+# Secrets
+.env
+cookie.txt
+cookies.txt
+
+# Python cache
+__pycache__/
+*.pyc
+>>>>>>> 40617a7 (feat: 크롤러 erd 반영 업데이트 및 크롤링페이지 추가)

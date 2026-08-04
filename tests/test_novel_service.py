@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-import inspect
+import csv
+from pathlib import Path
+from typing import Any
 
-import pandas as pd
 import pytest
 
-from entity.comment import Comment
-from entity.episode import Episode
-from entity.novel import Novel
-from entity.novel_author import NovelAuthor
-from entity.novel_statistics import NovelStatistics
-from service import novel_service as novel_service_module
+from clawler.munpia_crawler import ALL_HEADERS
 from service.novel_service import (
     CsvSchemaError,
     InvalidNovelInputError,
@@ -18,557 +14,431 @@ from service.novel_service import (
 )
 
 
-EPISODE_COLUMNS_FOR_TEST = {
-    "work_id",
-    "episode_id",
-    "episode_number",
-    "episode_title",
-    "published_at",
-    "access_type",
-    "view_count",
-    "like_count",
-    "comment_count",
-    "page_count",
-    "adult",
-    "paid_conversion_before_entry",
-    "up",
-    "collected_at",
-}
+def make_row(table: str, **values: Any) -> dict[str, str]:
+    row = {column: "" for column in ALL_HEADERS[table]}
+    row.update({key: str(value) for key, value in values.items()})
+    return row
 
-COMMENT_COLUMNS_FOR_TEST = {
-    "work_id",
-    "episode_id",
-    "comment_id",
-    "parent_comment_id",
-    "reply_level",
-    "content_type",
-    "comment_text",
-    "like_count",
-    "dislike_count",
-    "created_at",
-    "secret",
-    "report_status",
-    "block_status",
-    "collected_at",
-}
 
-AUTHOR_COLUMNS_FOR_TEST = {
-    "author_id",
-    "author_name",
-    "author_url",
-    "is_illustrator",
-}
+def write_table(
+    data_dir: Path,
+    table: str,
+    rows: list[dict[str, Any]] | None = None,
+) -> None:
+    data_dir.mkdir(parents=True, exist_ok=True)
+    path = data_dir / f"{table}.csv"
+
+    with path.open(
+        "w",
+        encoding="utf-8-sig",
+        newline="",
+    ) as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=ALL_HEADERS[table],
+            extrasaction="ignore",
+        )
+        writer.writeheader()
+        for row in rows or []:
+            writer.writerow(make_row(table, **row))
+
+
+def read_table(
+    data_dir: Path,
+    table: str,
+) -> list[dict[str, str]]:
+    with (data_dir / f"{table}.csv").open(
+        "r",
+        encoding="utf-8-sig",
+        newline="",
+    ) as file:
+        return list(csv.DictReader(file))
 
 
 @pytest.fixture
-def service(tmp_path) -> NovelService:
-    works_path = tmp_path / "works.csv"
-    authors_path = tmp_path / "authors.csv"
-    episodes_path = tmp_path / "episodes.csv"
-    comments_path = tmp_path / "comments.csv"
+def service(tmp_path: Path) -> NovelService:
+    data_dir = tmp_path / "data"
+    audit_dir = tmp_path / "audit"
 
-    works_data = [
-        {
-            "work_id": 123,
-            "source_url": (
-                "https://www.munpia.com/"
-                "novel/detail/123"
-            ),
-            "title": "테스트 작품",
-            "author_id": 10,
-            "author_name": "테스트 작가",
-            "illustrator_id": None,
-            "illustrator_name": None,
-            "introduction": "테스트 작품 소개",
-            "cover_url": None,
-            "origin_cover_url": None,
-            "group_name": "일반연재",
-            "genres_json": '["판타지"]',
-            "tags_json": "[]",
-            "genre_best_name": "판타지",
-            "genre_best_code": "FANTASY",
-            "free": True,
-            "paid_serial": False,
-            "exclusive": False,
-            "pre_exclusive": False,
-            "adult": False,
-            "contest": False,
-            "rental": False,
-            "pause": False,
-            "finish": False,
-            "epub": False,
-            "ebook": False,
-            "cp_novel": False,
-            "view_count": 1000,
-            "preference_count": 100,
-            "like_count": 50,
-            "chapter_count": 2,
-            "free_chapter_count": 2,
-            "characters": 5000,
-            "created_at": "2026-01-01T10:00:00",
-            "updated_at": "2026-01-02T10:00:00",
-            "paid_conversion_open_at": None,
-            "isbn": None,
-            "period": 0,
-            "unit_type": "화",
-            "male_count": 60,
-            "female_count": 40,
-            "age_10s_percent": 10,
-            "age_20s_percent": 20,
-            "age_30s_percent": 30,
-            "age_40s_percent": 25,
-            "age_50s_percent": 15,
-            "notice_count": 1,
-            "notices_json": "[]",
-            "events_json": "[]",
-            "collected_at": "2026-08-02T10:00:00",
-        }
-    ]
-
-    authors_data = [
-        {
-            "author_id": 10,
-            "author_name": "테스트 작가",
-            "author_url": (
-                "https://library.munpia.com/test-author"
-            ),
-            "is_illustrator": False,
-        },
-        {
-            "author_id": 20,
-            "author_name": "다른 작가",
-            "author_url": (
-                "https://library.munpia.com/other-author"
-            ),
-            "is_illustrator": False,
-        },
-    ]
-
-    episodes_data = [
-        {
-            "work_id": 123,
-            "episode_id": 1002,
-            "episode_number": 2,
-            "episode_title": "2화",
-            "published_at": "2026-01-02T10:00:00",
-            "access_type": "FREE",
-            "view_count": 90,
-            "like_count": 9,
-            "comment_count": 0,
-            "page_count": 11,
-            "adult": False,
-            "paid_conversion_before_entry": False,
-            "up": False,
-            "collected_at": "2026-08-02T10:00:00",
-        },
-        {
-            "work_id": 123,
-            "episode_id": 1001,
-            "episode_number": 1,
-            "episode_title": "1화",
-            "published_at": "2026-01-01T10:00:00",
-            "access_type": "FREE",
-            "view_count": 100,
-            "like_count": 10,
-            "comment_count": 1,
-            "page_count": 10,
-            "adult": False,
-            "paid_conversion_before_entry": False,
-            "up": False,
-            "collected_at": "2026-08-02T10:00:00",
-        },
-        {
-            "work_id": 999,
-            "episode_id": 9991,
-            "episode_number": 1,
-            "episode_title": "다른 작품",
-            "published_at": "2026-01-01T10:00:00",
-            "access_type": "FREE",
-            "view_count": 1,
-            "like_count": 0,
-            "comment_count": 0,
-            "page_count": 1,
-            "adult": False,
-            "paid_conversion_before_entry": False,
-            "up": False,
-            "collected_at": "2026-08-02T10:00:00",
-        },
-    ]
-
-    comments_data = [
-        {
-            "work_id": 123,
-            "episode_id": 1001,
-            "comment_id": 2001,
-            "parent_comment_id": None,
-            "reply_level": 0,
-            "content_type": "TEXT",
-            "comment_text": "재미있어요",
-            "like_count": 1,
-            "dislike_count": 0,
-            "created_at": "2026-01-01T11:00:00",
-            "secret": False,
-            "report_status": "NO",
-            "block_status": False,
-            "collected_at": "2026-08-02T10:00:00",
-        },
-        {
-            "work_id": 999,
-            "episode_id": 9991,
-            "comment_id": 9992,
-            "parent_comment_id": None,
-            "reply_level": 0,
-            "content_type": "TEXT",
-            "comment_text": "다른 작품 댓글",
-            "like_count": 0,
-            "dislike_count": 0,
-            "created_at": "2026-01-01T11:00:00",
-            "secret": False,
-            "report_status": "NO",
-            "block_status": False,
-            "collected_at": "2026-08-02T10:00:00",
-        },
-    ]
-
-    pd.DataFrame(works_data).to_csv(
-        works_path,
-        index=False,
-    )
-
-    pd.DataFrame(authors_data).to_csv(
-        authors_path,
-        index=False,
-    )
-
-    pd.DataFrame(episodes_data).to_csv(
-        episodes_path,
-        index=False,
-    )
-
-    pd.DataFrame(comments_data).to_csv(
-        comments_path,
-        index=False,
-    )
+    for table in ALL_HEADERS:
+        write_table(data_dir, table)
 
     return NovelService(
-        works_csv_path=works_path,
-        authors_csv_path=authors_path,
-        episodes_csv_path=episodes_path,
-        comments_csv_path=comments_path,
-        works_chunk_size=1,
-        child_chunk_size=1,
+        data_dir=data_dir,
+        audit_dir=audit_dir,
     )
-
-
-def test_parse_numeric_id(
-    service: NovelService,
-) -> None:
-    assert service.parse_novel_id("123") == 123
-
-
-def test_parse_legacy_munpia_url(
-    service: NovelService,
-) -> None:
-    result = service.parse_novel_id(
-        "https://novel.munpia.com/123"
-    )
-
-    assert result == 123
-
-
-def test_parse_current_munpia_url(
-    service: NovelService,
-) -> None:
-    result = service.parse_novel_id(
-        "https://www.munpia.com/novel/detail/123"
-    )
-
-    assert result == 123
 
 
 @pytest.mark.parametrize(
-    "invalid_value",
+    ("value", "expected"),
     [
-        "",
-        " ",
-        "0",
-        "-1",
-        "abc123",
-        "https://example.com/123",
-        "https://www.munpia.com/test/123",
+        ("512551", 512551),
+        (
+            "https://www.munpia.com/novel/detail/512551",
+            512551,
+        ),
+        ("https://novel.munpia.com/512551", 512551),
+        (
+            "https://example.test/path?novelId=512551",
+            512551,
+        ),
     ],
 )
-def test_reject_invalid_input(
-    service: NovelService,
-    invalid_value: str,
+def test_extract_novel_id(
+    value: str,
+    expected: int,
+) -> None:
+    assert NovelService.extract_novel_id(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["", "   ", "https://example.test/no-id", "not-a-link"],
+)
+def test_extract_novel_id_rejects_invalid_input(
+    value: str,
 ) -> None:
     with pytest.raises(InvalidNovelInputError):
-        service.parse_novel_id(invalid_value)
+        NovelService.extract_novel_id(value)
 
 
-def test_get_novel_returns_entity(
+def test_list_novels_keeps_csv_order_and_paginates(
     service: NovelService,
 ) -> None:
-    novel = service.get_novel(123)
-
-    assert isinstance(novel, Novel)
-    assert novel.novel_id == 123
-    assert novel.title == "테스트 작품"
-    assert novel.author_id == 10
-    assert novel.illustrator_id is None
-
-
-def test_get_novel_statistics_returns_entity(
-    service: NovelService,
-) -> None:
-    statistics = service.get_novel_statistics(123)
-
-    assert isinstance(
-        statistics,
-        NovelStatistics,
-    )
-    assert statistics.novel_id == 123
-    assert statistics.view_count == 1000
-    assert statistics.preference_count == 100
-    assert statistics.source_notice_count == 1
-
-
-def test_get_author_returns_entity(
-    service: NovelService,
-) -> None:
-    author = service.get_author(123)
-
-    assert isinstance(author, NovelAuthor)
-    assert author.author_id == 10
-    assert author.author_name == "테스트 작가"
-    assert author.author_url == (
-        "https://library.munpia.com/test-author"
-    )
-    assert author.is_illustrator is False
-
-
-def test_missing_author_returns_none(
-    service: NovelService,
-) -> None:
-    assert service.get_author(777777) is None
-
-
-def test_get_episodes_returns_only_target_novel(
-    service: NovelService,
-) -> None:
-    episodes = service.get_episodes(123)
-
-    assert len(episodes) == 2
-    assert all(
-        isinstance(episode, Episode)
-        for episode in episodes
-    )
-    assert all(
-        episode.novel_id == 123
-        for episode in episodes
-    )
-
-
-def test_episodes_are_sorted_by_number(
-    service: NovelService,
-) -> None:
-    episodes = service.get_episodes(123)
-
-    assert [
-        episode.episode_number
-        for episode in episodes
-    ] == [1, 2]
-
-
-def test_get_comments_returns_only_target_novel(
-    service: NovelService,
-) -> None:
-    comments = service.get_comments(123)
-
-    assert len(comments) == 1
-
-    comment = comments[0]
-
-    assert isinstance(comment, Comment)
-    assert comment.comment_id == 2001
-    assert comment.novel_id == 123
-    assert comment.episode_id == 1001
-    assert comment.parent_comment_id is None
-    assert comment.reply_level == 0
-    assert comment.content_type == "TEXT"
-    assert comment.comment_text == "재미있어요"
-    assert comment.like_count == 1
-    assert comment.dislike_count == 0
-    assert comment.secret is False
-    assert comment.report_status == "NO"
-    assert comment.block_status is False
-    assert comment.created_at is not None
-    assert comment.collected_at is not None
-
-
-def test_missing_novel_returns_none(
-    service: NovelService,
-) -> None:
-    assert service.get_novel(777777) is None
-
-
-def test_missing_statistics_returns_none(
-    service: NovelService,
-) -> None:
-    assert (
-        service.get_novel_statistics(777777)
-        is None
-    )
-
-
-def test_missing_children_return_empty_lists(
-    service: NovelService,
-) -> None:
-    assert service.get_episodes(777777) == []
-    assert service.get_comments(777777) == []
-
-
-def test_missing_required_column_raises_error(
-    tmp_path,
-) -> None:
-    works_path = tmp_path / "works.csv"
-    authors_path = tmp_path / "authors.csv"
-    episodes_path = tmp_path / "episodes.csv"
-    comments_path = tmp_path / "comments.csv"
-
-    pd.DataFrame(
-        [
-            {
-                "work_id": 123,
-                # title 누락
-                "source_url": "https://example.com",
-            }
-        ]
-    ).to_csv(
-        works_path,
-        index=False,
-    )
-
-    pd.DataFrame(
-        columns=sorted(AUTHOR_COLUMNS_FOR_TEST)
-    ).to_csv(
-        authors_path,
-        index=False,
-    )
-
-    pd.DataFrame(
-        columns=sorted(EPISODE_COLUMNS_FOR_TEST)
-    ).to_csv(
-        episodes_path,
-        index=False,
-    )
-
-    pd.DataFrame(
-        columns=sorted(COMMENT_COLUMNS_FOR_TEST)
-    ).to_csv(
-        comments_path,
-        index=False,
-    )
-
-    broken_service = NovelService(
-        works_csv_path=works_path,
-        authors_csv_path=authors_path,
-        episodes_csv_path=episodes_path,
-        comments_csv_path=comments_path,
-    )
-
-    with pytest.raises(CsvSchemaError):
-        broken_service.get_novel(123)
-
-
-def test_missing_author_column_raises_error(
-    tmp_path,
-) -> None:
-    works_path = tmp_path / "works.csv"
-    authors_path = tmp_path / "authors.csv"
-    episodes_path = tmp_path / "episodes.csv"
-    comments_path = tmp_path / "comments.csv"
-
-    works_data = [
+    novels = [
         {
-            "work_id": 123,
-            "source_url": (
-                "https://www.munpia.com/"
-                "novel/detail/123"
-            ),
-            "title": "테스트 작품",
-            "introduction": None,
-            "origin_cover_url": None,
+            "novel_id": number,
+            "title": f"작품 {number}",
             "author_id": 10,
-            "free": True,
-            "paid_serial": False,
-            "exclusive": False,
-            "pre_exclusive": False,
-            "adult": False,
-            "contest": False,
-            "rental": False,
-            "pause": False,
-            "finish": False,
-            "epub": False,
-            "ebook": False,
-            "cp_novel": False,
-            "created_at": None,
-            "updated_at": None,
-            "paid_conversion_open_at": None,
-            "isbn": None,
-            "period": None,
-            "unit_type": None,
-            "collected_at": None,
         }
+        for number in range(1, 26)
     ]
-
-    pd.DataFrame(works_data).to_csv(
-        works_path,
-        index=False,
+    write_table(service.data_dir, "novel", novels)
+    write_table(
+        service.data_dir,
+        "novel_author",
+        [{
+            "author_id": 10,
+            "author_name": "테스트 작가",
+        }],
     )
-
-    pd.DataFrame(
+    write_table(
+        service.data_dir,
+        "novel_statistics",
         [
             {
-                "author_id": 10,
-                # author_name 누락
-                "author_url": None,
-                "is_illustrator": False,
+                "novel_id": number,
+                "view_count": number * 100,
             }
-        ]
-    ).to_csv(
-        authors_path,
-        index=False,
+            for number in range(1, 26)
+        ],
     )
 
-    pd.DataFrame(
-        columns=sorted(EPISODE_COLUMNS_FOR_TEST)
-    ).to_csv(
-        episodes_path,
-        index=False,
-    )
+    first = service.list_novels(page=1, page_size=20)
+    second = service.list_novels(page=2, page_size=20)
 
-    pd.DataFrame(
-        columns=sorted(COMMENT_COLUMNS_FOR_TEST)
-    ).to_csv(
-        comments_path,
-        index=False,
-    )
+    assert first.total_rows == 25
+    assert first.total_pages == 2
+    assert len(first.rows) == 20
+    assert first.rows[0]["novel_id"] == "1"
+    assert first.rows[-1]["novel_id"] == "20"
+    assert first.rows[0]["author_name"] == "테스트 작가"
+    assert first.rows[0]["view_count"] == "100"
 
-    broken_service = NovelService(
-        works_csv_path=works_path,
-        authors_csv_path=authors_path,
-        episodes_csv_path=episodes_path,
-        comments_csv_path=comments_path,
+    assert len(second.rows) == 5
+    assert second.rows[0]["novel_id"] == "21"
+    assert second.rows[-1]["novel_id"] == "25"
+
+
+def test_invalid_csv_header_raises_schema_error(
+    service: NovelService,
+) -> None:
+    path = service.data_dir / "novel.csv"
+    path.write_text(
+        "wrong_column\nvalue\n",
+        encoding="utf-8-sig",
     )
 
     with pytest.raises(CsvSchemaError):
-        broken_service.get_author(123)
+        service.list_novels()
 
 
-def test_service_does_not_import_streamlit() -> None:
-    source = inspect.getsource(
-        novel_service_module
+def test_overwrite_replaces_scoped_rows_and_upserts_masters(
+    service: NovelService,
+) -> None:
+    # Existing target rows and unrelated rows.
+    write_table(
+        service.data_dir,
+        "novel",
+        [
+            {
+                "novel_id": 512551,
+                "title": "이전 제목",
+                "author_id": 1,
+            },
+            {
+                "novel_id": 999999,
+                "title": "다른 작품",
+                "author_id": 9,
+            },
+        ],
+    )
+    write_table(
+        service.data_dir,
+        "episode",
+        [
+            {
+                "episode_id": 1,
+                "novel_id": 512551,
+                "episode_title": "이전 회차",
+            },
+            {
+                "episode_id": 99,
+                "novel_id": 999999,
+                "episode_title": "보존 회차",
+            },
+        ],
+    )
+    write_table(
+        service.data_dir,
+        "comment",
+        [
+            {
+                "comment_id": 1,
+                "novel_id": 512551,
+                "episode_id": 1,
+                "comment_text": "이전 댓글",
+            },
+            {
+                "comment_id": 99,
+                "novel_id": 999999,
+                "episode_id": 99,
+                "comment_text": "보존 댓글",
+            },
+        ],
+    )
+    write_table(
+        service.data_dir,
+        "novel_author",
+        [
+            {
+                "author_id": 1,
+                "author_name": "이전 작가명",
+            },
+            {
+                "author_id": 9,
+                "author_name": "보존 작가",
+            },
+        ],
+    )
+    write_table(
+        service.data_dir,
+        "novel_ai_evaluation",
+        [{
+            "evaluation_id": 7,
+            "novel_id": 512551,
+            "evaluation_type": "summary",
+        }],
     )
 
-    assert "import streamlit" not in source
+    evaluation_before = (
+        service.data_dir / "novel_ai_evaluation.csv"
+    ).read_bytes()
+
+    result = {
+        "novel_author": {
+            "author_id": 1,
+            "author_name": "최신 작가명",
+        },
+        "novel_group": [],
+        "novel_genre": [],
+        "tag": [],
+        "novel_tag": [
+            {
+                "novel_id": 512551,
+                "tag_id": 101,
+            },
+        ],
+        "novel": {
+            "novel_id": 512551,
+            "title": "최신 제목",
+            "author_id": 1,
+        },
+        "novel_statistics": {
+            "novel_id": 512551,
+            "view_count": 12345,
+        },
+        "episode": [
+            {
+                "episode_id": 2,
+                "novel_id": 512551,
+                "episode_number": 1,
+                "episode_title": "최신 회차",
+            },
+        ],
+        "comment": [
+            {
+                "comment_id": 2,
+                "novel_id": 512551,
+                "episode_id": 2,
+                "comment_text": "최신 댓글",
+            },
+        ],
+    }
+
+    changed = service._overwrite_from_result(
+        novel_id=512551,
+        result=result,
+    )
+
+    novels = read_table(service.data_dir, "novel")
+    episodes = read_table(service.data_dir, "episode")
+    comments = read_table(service.data_dir, "comment")
+    authors = read_table(service.data_dir, "novel_author")
+
+    assert changed["novel"] == 1
+    assert changed["episode"] == 1
+    assert changed["comment"] == 1
+
+    assert {
+        row["novel_id"]: row["title"]
+        for row in novels
+    } == {
+        "999999": "다른 작품",
+        "512551": "최신 제목",
+    }
+
+    assert {
+        row["episode_id"]: row["episode_title"]
+        for row in episodes
+    } == {
+        "99": "보존 회차",
+        "2": "최신 회차",
+    }
+
+    assert {
+        row["comment_id"]: row["comment_text"]
+        for row in comments
+    } == {
+        "99": "보존 댓글",
+        "2": "최신 댓글",
+    }
+
+    assert {
+        row["author_id"]: row["author_name"]
+        for row in authors
+    } == {
+        "1": "최신 작가명",
+        "9": "보존 작가",
+    }
+
+    assert (
+        service.data_dir / "novel_ai_evaluation.csv"
+    ).read_bytes() == evaluation_before
+
+
+class FakeCrawler:
+    def __init__(
+        self,
+        result: dict[str, Any],
+    ) -> None:
+        self.result = result
+        self.active_states: dict[int, dict[str, Any]] = {}
+
+    def collect_one_sync(
+        self,
+        novel_id: int,
+    ) -> dict[str, Any]:
+        return self.result
+
+
+def successful_result(
+    novel_id: int,
+    title: str,
+) -> dict[str, Any]:
+    return {
+        "type": "SUCCESS",
+        "novel_author": {
+            "author_id": 1,
+            "author_name": "작가",
+        },
+        "novel_group": [],
+        "novel_genre": [],
+        "tag": [],
+        "novel_tag": [],
+        "novel": {
+            "novel_id": novel_id,
+            "title": title,
+            "author_id": 1,
+        },
+        "novel_statistics": {
+            "novel_id": novel_id,
+        },
+        "episode": [],
+        "comment": [],
+    }
+
+
+def test_collect_or_update_reports_insert(
+    service: NovelService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    crawler = FakeCrawler(
+        successful_result(512551, "신규 작품")
+    )
+    monkeypatch.setattr(
+        service,
+        "_create_crawler",
+        lambda: crawler,
+    )
+
+    result = service.collect_or_update("512551")
+
+    assert result.novel_id == 512551
+    assert result.change_type == "INSERT"
+    assert result.title == "신규 작품"
+
+
+def test_collect_or_update_reports_update(
+    service: NovelService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_table(
+        service.data_dir,
+        "novel",
+        [{
+            "novel_id": 512551,
+            "title": "이전 작품",
+        }],
+    )
+
+    crawler = FakeCrawler(
+        successful_result(512551, "갱신 작품")
+    )
+    monkeypatch.setattr(
+        service,
+        "_create_crawler",
+        lambda: crawler,
+    )
+
+    result = service.collect_or_update("512551")
+
+    assert result.change_type == "UPDATE"
+
+    novels = read_table(service.data_dir, "novel")
+    assert len(novels) == 1
+    assert novels[0]["title"] == "갱신 작품"
+
+
+def test_parallel_progress_message_contains_counts() -> None:
+    message = NovelService._progress_message({
+        "phase": "EPISODE_PARALLEL",
+        "chapter_done": 12,
+        "chapter_total": 100,
+        "chapter_in_flight": 20,
+        "chapter_failed": 2,
+    })
+
+    assert "완료 12/100" in message
+    assert "처리 중 20개" in message
+    assert "실패 2개" in message

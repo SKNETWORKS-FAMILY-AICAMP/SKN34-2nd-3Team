@@ -1,362 +1,309 @@
-from dataclasses import asdict
-from pathlib import Path
+from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
 
-from service import NovelService, NovelServiceError
-
-
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "db" / "data"
-
-
-service = NovelService(
-    works_csv_path=DATA_DIR / "works.csv",
-    authors_csv_path=DATA_DIR / "authors.csv",
-    episodes_csv_path=DATA_DIR / "episodes.csv",
-    comments_csv_path=DATA_DIR / "comments.csv",
+from service.novel_service import (
+    NovelService,
+    NovelServiceError,
+    PAGE_SIZE,
 )
 
 
-st.set_page_config(
-    page_title="문피아 작품 데이터 조회",
-    layout="wide",
-)
+def init_state() -> None:
+    defaults = {
+        "novel_page": 1,
+        "last_changed_novel_id": None,
+        "last_change_type": None,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 
-st.markdown(
-    """
-    <style>
-        .block-container {
-            padding-top: 2rem !important;
-            padding-bottom: 2rem !important;
-            padding-left: 5% !important;
-            padding-right: 5% !important;
-        }
+def render_header() -> None:
+    st.markdown(
+        """
+        <style>
+            .block-container {
+                padding-top: 2rem !important;
+                padding-bottom: 2rem !important;
+                padding-left: 5% !important;
+                padding-right: 5% !important;
+            }
 
-        [data-testid="stHeader"] {
-            display: none !important;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+            [data-testid="stHeader"] {
+                display: none !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-
-st.markdown(
-    """
-    <div style="
-        background-color: #1E1E2E;
-        padding: 1.2rem 2rem;
-        border-radius: 0.5rem;
-        margin-top: -1rem;
-        margin-bottom: 2rem;
-        border-bottom: 2px solid #3b82f6;
-    ">
-        <h2 style="margin: 0; color: white;">
-            📚 문피아 작품 & 작가 데이터 조회
-        </h2>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-if "novel" not in st.session_state:
-    st.session_state.novel = None
-
-if "statistics" not in st.session_state:
-    st.session_state.statistics = None
-
-if "author" not in st.session_state:
-    st.session_state.author = None
-
-if "episodes" not in st.session_state:
-    st.session_state.episodes = []
-
-if "comments" not in st.session_state:
-    st.session_state.comments = []
-
-if "current_view" not in st.session_state:
-    st.session_state.current_view = "work"
+    st.markdown(
+        """
+        <div style="
+            background-color:#1E1E2E;
+            padding:1.2rem 2rem;
+            border-radius:0.5rem;
+            margin-top:-1rem;
+            margin-bottom:2rem;
+            border-bottom:2px solid #3b82f6;
+        ">
+            <h2 style="margin:0;color:white;">
+                📚 문피아 작품 실시간 수집기
+            </h2>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
-raw_input = st.text_input(
-    "작품 주소 또는 작품 ID 입력",
-    placeholder=(
-        "예: 12345 또는 "
-        "https://novel.munpia.com/12345"
-    ),
-)
+def render_collection_form(
+    service: NovelService,
+) -> None:
+    with st.form("novel_collect_form"):
+        link_or_id = st.text_input(
+            "문피아 작품 링크 또는 novel_id",
+            placeholder="https://www.munpia.com/novel/detail/12345",
+        )
+        submitted = st.form_submit_button(
+            "데이터 수집",
+            type="primary",
+            use_container_width=True,
+        )
 
+    if not submitted:
+        return
 
-if st.button(
-    "데이터 조회",
-    type="primary",
-):
     try:
-        novel_id = service.parse_novel_id(raw_input)
+        novel_id = service.extract_novel_id(link_or_id)
 
-        with st.status(
-            f"작품 ID {novel_id} 조회 중...",
+        status_box = st.status(
+            f"작품 {novel_id} 수집을 시작합니다.",
             expanded=True,
-        ) as status_box:
-            novel = service.get_novel(novel_id)
+        )
+        progress_text = status_box.empty()
+        progress_bar = status_box.progress(0)
+        result = None
 
-            if novel is None:
-                st.session_state.novel = None
-                st.session_state.statistics = None
-                st.session_state.author = None
-                st.session_state.episodes = []
-                st.session_state.comments = []
-
+        for event in service.collect_or_update_stream(
+            link_or_id
+        ):
+            if event.event == "COMPLETE":
+                result = event.result
+                progress_bar.progress(100)
+                progress_text.markdown(
+                    f"**완료** · {event.elapsed_seconds:.1f}초"
+                )
                 status_box.update(
-                    label="❌ 작품을 찾을 수 없습니다.",
-                    state="error",
-                    expanded=False,
-                )
-
-                st.error(
-                    "해당 작품을 찾을 수 없습니다."
-                )
-
-            else:
-                statistics = (
-                    service.get_novel_statistics(
-                        novel_id
-                    )
-                )
-
-                author = service.get_author(
-                    novel_id
-                )
-
-                episodes = service.get_episodes(
-                    novel_id
-                )
-
-                comments = service.get_comments(
-                    novel_id
-                )
-
-                st.session_state.novel = novel
-                st.session_state.statistics = statistics
-                st.session_state.author = author
-                st.session_state.episodes = episodes
-                st.session_state.comments = comments
-                st.session_state.current_view = "work"
-
-                status_box.update(
-                    label="✅ 데이터 조회 완료!",
+                    label=(
+                        f"작품 {novel_id} 수집 및 CSV 반영 완료"
+                    ),
                     state="complete",
                     expanded=False,
                 )
+                break
 
-                st.success(
-                    f"'{novel.title}' 조회를 완료했습니다."
+            total = event.chapter_total
+            done = event.chapter_done
+
+            if total and total > 0:
+                percent = min(
+                    95,
+                    max(5, int(done / total * 90) + 5),
                 )
+            else:
+                phase_percent = {
+                    "START": 3,
+                    "DETAIL": 8,
+                    "CHAPTER_LIST": 12,
+                    "EPISODE": 20,
+                    "EPISODE_PARALLEL": 20,
+                    "COMMENTS": 30,
+                }
+                percent = phase_percent.get(
+                    event.phase,
+                    5,
+                )
+
+            progress_bar.progress(percent)
+
+            detail_lines = [
+                f"**{event.message}**",
+                f"경과시간: {event.elapsed_seconds:.1f}초",
+            ]
+
+            if event.phase == "EPISODE_PARALLEL":
+                detail_lines.append(
+                    f"동시 처리 중: {event.chapter_in_flight:,}개"
+                )
+                detail_lines.append(
+                    f"실패 회차: {event.chapter_failed:,}개"
+                )
+
+            progress_text.markdown(
+                "  \n".join(detail_lines)
+            )
+
+        if result is None:
+            raise NovelServiceError(
+                "수집 완료 결과를 받지 못했습니다."
+            )
+
+        st.session_state.last_changed_novel_id = result.novel_id
+        st.session_state.last_change_type = result.change_type
+        st.session_state.novel_page = service.find_page_of_novel(
+            result.novel_id,
+            PAGE_SIZE,
+        )
+
+        action = (
+            "신규 추가"
+            if result.change_type == "INSERT"
+            else "기존 데이터 갱신"
+        )
+        title = f" · {result.title}" if result.title else ""
+
+        st.success(
+            f"작품 {result.novel_id}{title}: {action} 완료"
+        )
 
     except NovelServiceError as exc:
-        st.error(str(exc))
+        message = str(exc)
+
+        if (
+            "ACCESS_UNAVAILABLE" in message
+            or "A002_14003" in message
+            or "권한이 없습니다" in message
+        ):
+            st.error(
+                "로그인 권한이 필요한 데이터입니다. "
+                ".env의 MUNPIA_COOKIE가 없거나 만료되었습니다."
+            )
+        else:
+            st.error(f"수집 실패: {message}")
 
     except Exception as exc:
-        st.error(
-            f"예상하지 못한 오류가 발생했습니다: {exc}"
+        st.error(f"수집 실패: {exc}")
+
+
+def render_pagination(
+    current_page: int,
+    total_pages: int,
+    total_rows: int,
+) -> None:
+    previous_col, page_col, next_col = st.columns([1, 2, 1])
+
+    with previous_col:
+        if st.button(
+            "◀ 이전",
+            disabled=current_page <= 1,
+            use_container_width=True,
+        ):
+            st.session_state.novel_page = current_page - 1
+            st.rerun()
+
+    with page_col:
+        selected = st.number_input(
+            "페이지",
+            min_value=1,
+            max_value=total_pages,
+            value=current_page,
+            step=1,
+            label_visibility="collapsed",
         )
 
+        if int(selected) != current_page:
+            st.session_state.novel_page = int(selected)
+            st.rerun()
 
-if st.session_state.novel is not None:
-    novel = st.session_state.novel
-    statistics = st.session_state.statistics
-    author = st.session_state.author
-    episodes = st.session_state.episodes
-    comments = st.session_state.comments
+        st.caption(
+            f"{current_page:,} / {total_pages:,}페이지 "
+            f"· 총 {total_rows:,}개 · 페이지당 {PAGE_SIZE}개"
+        )
 
-    st.markdown("---")
+    with next_col:
+        if st.button(
+            "다음 ▶",
+            disabled=current_page >= total_pages,
+            use_container_width=True,
+        ):
+            st.session_state.novel_page = current_page + 1
+            st.rerun()
 
-    work_button_column, author_button_column = (
-        st.columns(2)
+
+def render_table(
+    rows: list[dict],
+) -> None:
+    if not rows:
+        st.info("현재 novel.csv에 수집된 작품이 없습니다.")
+        return
+
+    frame = pd.DataFrame(rows)
+
+    changed_id = st.session_state.last_changed_novel_id
+    change_type = st.session_state.last_change_type
+
+    def highlight_changed(row: pd.Series) -> list[str]:
+        if (
+            changed_id is not None
+            and str(row.get("novel_id", "")) == str(changed_id)
+        ):
+            background = (
+                "background-color: rgba(34, 197, 94, 0.30)"
+                if change_type == "INSERT"
+                else "background-color: rgba(250, 204, 21, 0.32)"
+            )
+            return [background] * len(row)
+
+        return [""] * len(row)
+
+    styled = frame.style.apply(
+        highlight_changed,
+        axis=1,
     )
 
-    with work_button_column:
-        if st.button(
-            "📖 작품 정보",
-            width="stretch",
-        ):
-            st.session_state.current_view = "work"
+    st.dataframe(
+        styled,
+        use_container_width=True,
+        hide_index=True,
+        height=740,
+    )
 
-    with author_button_column:
-        if st.button(
-            "✍️ 작가 정보",
-            width="stretch",
-        ):
-            st.session_state.current_view = "author"
 
-    if st.session_state.current_view == "work":
-        st.subheader("📌 작품 상세 정보")
+def main() -> None:
+    st.set_page_config(
+        page_title="문피아 데이터 수집기",
+        page_icon="📚",
+        layout="wide",
+    )
 
-        st.markdown(f"### {novel.title}")
+    init_state()
+    render_header()
 
-        if author is not None:
-            st.markdown(
-                f"**✍️ 작가:** {author.author_name}"
-            )
-        elif novel.author_id is not None:
-            st.markdown(
-                f"**✍️ 작가 ID:** {novel.author_id}"
-            )
-        else:
-            st.markdown(
-                "**✍️ 작가:** 정보 없음"
-            )
+    service = NovelService()
 
-        metric1, metric2, metric3 = st.columns(3)
+    # 1. 링크/API 수집
+    render_collection_form(service)
 
-        view_count = (
-            statistics.view_count
-            if (
-                statistics is not None
-                and statistics.view_count is not None
-            )
-            else None
-        )
+    st.divider()
+    st.subheader("수집된 작품 목록")
 
-        preference_count = (
-            statistics.preference_count
-            if (
-                statistics is not None
-                and statistics.preference_count is not None
-            )
-            else None
-        )
+    # 2. 기존 novel.csv 목록을 20개씩 표시
+    page_data = service.list_novels(
+        page=st.session_state.novel_page,
+        page_size=PAGE_SIZE,
+    )
+    st.session_state.novel_page = page_data.page
 
-        chapter_count = (
-            statistics.chapter_count
-            if (
-                statistics is not None
-                and statistics.chapter_count is not None
-            )
-            else len(episodes)
-        )
+    render_pagination(
+        current_page=page_data.page,
+        total_pages=page_data.total_pages,
+        total_rows=page_data.total_rows,
+    )
+    render_table(page_data.rows)
 
-        metric1.metric(
-            "👁️ 조회수",
-            (
-                f"{view_count:,}"
-                if view_count is not None
-                else "정보 없음"
-            ),
-        )
 
-        metric2.metric(
-            "❤️ 선호작수",
-            (
-                f"{preference_count:,}"
-                if preference_count is not None
-                else "정보 없음"
-            ),
-        )
-
-        metric3.metric(
-            "📝 총 회차",
-            f"{chapter_count:,}",
-        )
-
-        st.markdown("**📖 작품 소개**")
-
-        st.info(
-            novel.introduction
-            if novel.introduction
-            else "소개글이 없습니다."
-        )
-
-        st.markdown("---")
-
-        st.subheader(
-            f"📑 회차 목록 "
-            f"(총 {len(episodes):,}개)"
-        )
-
-        if episodes:
-            st.dataframe(
-                pd.DataFrame(
-                    [
-                        asdict(episode)
-                        for episode in episodes
-                    ]
-                ),
-                width="stretch",
-                hide_index=True,
-            )
-        else:
-            st.info(
-                "조회된 회차 정보가 없습니다."
-            )
-
-        st.subheader(
-            f"💬 댓글 목록 "
-            f"(총 {len(comments):,}개)"
-        )
-
-        if comments:
-            st.dataframe(
-                pd.DataFrame(
-                    [
-                        asdict(comment)
-                        for comment in comments
-                    ]
-                ),
-                width="stretch",
-                hide_index=True,
-            )
-        else:
-            st.info(
-                "조회된 댓글 정보가 없습니다."
-            )
-
-    elif st.session_state.current_view == "author":
-        st.subheader("📌 작가 상세 정보")
-
-        if author is None:
-            st.warning(
-                "해당 작품에 연결된 작가 정보가 없습니다."
-            )
-
-        else:
-            st.markdown(
-                f"### {author.author_name}"
-            )
-
-            author_metric1, author_metric2 = (
-                st.columns(2)
-            )
-
-            author_metric1.metric(
-                "작가 ID",
-                f"{author.author_id:,}",
-            )
-
-            author_metric2.metric(
-                "삽화가 여부",
-                (
-                    "예"
-                    if author.is_illustrator
-                    else "아니오"
-                ),
-            )
-
-            if author.author_url:
-                st.markdown(
-                    f"**작가 서재:** "
-                    f"[{author.author_url}]"
-                    f"({author.author_url})"
-                )
-
-            st.dataframe(
-                pd.DataFrame(
-                    [asdict(author)]
-                ),
-                width="stretch",
-                hide_index=True,
-            )
+if __name__ == "__main__":
+    main()
