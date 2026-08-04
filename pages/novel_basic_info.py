@@ -24,23 +24,43 @@ def render_page():
             episodes_csv_path="./db/data/episodes.csv",
             comments_csv_path="./db/data/comments.csv"
         )
-        # Service는 이제 CSV 경로를 모릅니다! Repository만 압니다.
         service = NovelService(repository=repository)
     except Exception as e:
         st.error(f"서비스 초기화에 실패했습니다: {e}")
         return
     
-    user_input = st.text_input("🔍 조회할 소설 ID 또는 작품 URL을 입력하세요:", "")
+    query_url = st.query_params.get("url", "")
     
-    if st.button("조회"):
+    if "last_query_url" not in st.session_state or st.session_state.last_query_url != query_url:
+        st.session_state.last_query_url = query_url
+        st.session_state.input_url = query_url
+        st.session_state.auto_searched = False 
+        
+    user_input = st.text_input(
+        "🔍 조회할 소설 ID 또는 작품 URL을 입력하세요:", 
+        key="input_url"
+    )
+    
+    is_clicked = st.button("조회")
+    
+    should_search = False
+    
+    if is_clicked:
+        should_search = True
+        st.session_state.auto_searched = True 
+    elif query_url and not st.session_state.auto_searched:
+        should_search = True
+        st.session_state.auto_searched = True
+
+    if should_search:
         if not user_input.strip():
             st.warning("소설 ID 또는 작품 URL을 입력해 주세요.")
             return
             
         try:
             novel_id = service.parse_novel_id(user_input)
-            
             novel = service.get_novel(novel_id)
+            
             if not novel:
                 st.error(f"❌ 해당 소설을 찾을 수 없습니다. (ID: {novel_id})")
                 return
@@ -57,7 +77,7 @@ def render_page():
                 st.header(f"📘 {novel.title}")
                 st.write(f"**소설 ID:** {novel.novel_id} | **유료 연재 여부:** {'무료' if novel.free else '유료'}")
                 
-                # 작가 정보 조회 (entity/novel_author.py 규격 매핑)
+                # 작가 정보 조회
                 author = service.get_author(novel_id)
                 if author:
                     author_str = f"{author.author_name}(일러스트레이터)" if author.is_illustrator else author.author_name
@@ -70,7 +90,7 @@ def render_page():
                 if novel.source_url: 
                     st.markdown(f"🔗 [작품 원본 링크]({novel.source_url})")
             
-            # [영역 2] 통계 정보 (entity/novel_statistics.py 규격 매핑)
+            # [영역 2] 통계 정보
             stats = service.get_novel_statistics(novel_id)
             if stats:
                 st.markdown("---")
@@ -80,7 +100,7 @@ def render_page():
                 col2.metric("선호작 수", f"{stats.preference_count:,}" if stats.preference_count is not None else "0")
                 col3.metric("총 회차", f"{stats.chapter_count:,}" if stats.chapter_count is not None else "0")
             
-            # [영역 3] 회차 목록 (entity/episode.py 규격 매핑)
+            # [영역 3] 회차 목록
             episodes = service.get_episodes(novel_id)
             st.markdown("---")
             st.subheader(f"📚 회차 목록 (총 {len(episodes)}화)")
@@ -91,7 +111,7 @@ def render_page():
             else:
                 st.info("빈 목록 (해당 작품의 회차 데이터가 없습니다.)")
                 
-            # [영역 4] 댓글 목록 (entity/comment.py 규격 매핑)
+            # [영역 4] 댓글 목록
             comments = service.get_comments(novel_id)
             st.markdown("---")
             st.subheader(f"💬 댓글 목록 (총 {len(comments)}개)")
@@ -102,7 +122,6 @@ def render_page():
             else:
                 st.info("빈 목록 (해당 작품에 달린 댓글이 없습니다.)")
                 
-        # 5. 예외 처리 (팀 컨벤션인 NovelServiceError 우선 처리)
         except NovelServiceError as nse:
             st.error(f"⚠️ {nse}")
         except Exception as e:
