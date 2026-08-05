@@ -226,7 +226,7 @@ class Repository:
                 FROM novel_genre AS g
                 JOIN novel AS n ON g.genre_id = n.genre_1
                 JOIN novel_recommendation_score AS r ON r.novel_id = n.novel_id
-                  AND r.scored_episode_count >= 10
+                  AND r.scored_episode_count >= 1
                   AND r.free_score IS NOT NULL
                 WHERE n.free = 1
                   AND COALESCE(n.paid_serial, 0) = 0
@@ -236,7 +236,7 @@ class Repository:
                       SELECT 1
                       FROM episode AS e50
                       WHERE e50.novel_id = n.novel_id
-                        AND e50.episode_number >= 50
+                        AND e50.episode_number >= 30
                   )
                 GROUP BY g.genre_id, g.genre_name
                 ORDER BY
@@ -264,6 +264,8 @@ class Repository:
                     g.genre_name,
                     r.free_score AS recommendation_score,
                     r.free_score, r.paid_score,
+                    r.retention_score, r.reference_view_count,
+                    r.view_scale_max, r.view_grade,
                     r.scored_episode_count, r.average_dropout_rate,
                     COALESCE(s.view_count, 0) AS view_count,
                     COALESCE(s.preference_count, 0) AS preference_count,
@@ -282,16 +284,23 @@ class Repository:
                     COALESCE(c.positive_count, 0) AS positive_count,
                     COALESCE(c.negative_count, 0) AS negative_count,
                     COALESCE(c.neutral_count, 0) AS neutral_count,
-                    COALESCE(c.total_count, 0) AS comment_count
+                    COALESCE(c.total_count, 0) AS comment_count,
+                    COALESCE(p.predicted_purchase_count, 0) AS predicted_purchase_count,
+                    COALESCE(p.predicted_conversion_rate, 0) AS predicted_conversion_rate,
+                    COALESCE(p.predicted_paid_dropout_rate, 1) AS predicted_paid_dropout_rate,
+                    COALESCE(p.model_mae, 0) AS conversion_model_mae,
+                    COALESCE(p.training_sample_count, 0) AS conversion_training_samples
                 FROM novel AS n
                 JOIN novel_genre AS g
                   ON g.genre_id = %s AND g.genre_id = n.genre_1
                 JOIN novel_recommendation_score AS r ON r.novel_id = n.novel_id
-                  AND r.scored_episode_count >= 10
+                  AND r.scored_episode_count >= 1
                   AND r.free_score IS NOT NULL
                 LEFT JOIN novel_author AS a ON a.author_id = n.author_id
                 LEFT JOIN novel_statistics AS s ON s.novel_id = n.novel_id
                 LEFT JOIN novel_comment_sentiment AS c ON c.novel_id = n.novel_id
+                LEFT JOIN novel_paid_conversion_prediction AS p
+                  ON p.novel_id = n.novel_id
                 WHERE n.free = 1
                   AND COALESCE(n.paid_serial, 0) = 0
                   AND COALESCE(n.finish, 0) = 0
@@ -300,7 +309,7 @@ class Repository:
                       SELECT 1
                       FROM episode AS e50
                       WHERE e50.novel_id = n.novel_id
-                        AND e50.episode_number >= 50
+                        AND e50.episode_number >= 30
                   )
                 ORDER BY r.free_score DESC,
                          r.average_dropout_rate ASC,
@@ -341,7 +350,7 @@ class Repository:
                         )
                     END AS dropout_rate
                 FROM ordered_episode
-                WHERE episode_number > 5
+                WHERE episode_number > 25
                   AND access_type = previous_access_type
                   AND (view_count = 0 OR previous_view_count > 0)
                   AND view_count IS NOT NULL
