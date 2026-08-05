@@ -1,0 +1,350 @@
+"""MySQL repository for the web-novel domain.
+
+This module uses only the root project's entities and database schema. It is
+independent from project_1 and project_2.
+"""
+
+from __future__ import annotations
+
+import os
+from contextlib import contextmanager
+from typing import Any, Iterator, Sequence
+
+import mysql.connector
+from dotenv import load_dotenv
+from mysql.connector.connection import MySQLConnection
+
+from entity.comment import Comment
+from entity.episode import Episode
+from entity.novel import Novel
+from entity.novel_author import NovelAuthor
+from entity.novel_statistics import NovelStatistics
+
+
+load_dotenv()
+
+
+class Repository:
+    """Singleton MySQL repository for novels and collected child records."""
+
+    _instance: Repository | None = None
+    connection: MySQLConnection | None
+
+    def __new__(cls) -> Repository:
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.connection = None
+        return cls._instance
+
+    def get_connection(self) -> MySQLConnection:
+        """Return a live connection, reconnecting when necessary."""
+        if self.connection is None or not self.connection.is_connected():
+            self.connection = mysql.connector.connect(
+                host=os.getenv("DB_HOST", "127.0.0.1"),
+                port=int(os.getenv("MYSQL_PORT", os.getenv("DB_PORT", "3306"))),
+                user=os.getenv("DB_USER", os.getenv("MYSQL_USER")),
+                password=os.getenv("DB_PASSWORD", os.getenv("MYSQL_PASSWORD")),
+                database=os.getenv("DB_NAME", os.getenv("MYSQL_DATABASE")),
+                charset="utf8mb4",
+                use_unicode=True,
+                autocommit=False,
+            )
+        return self.connection
+
+    def close(self) -> None:
+        """Close the cached connection."""
+        if self.connection is not None and self.connection.is_connected():
+            self.connection.close()
+        self.connection = None
+
+    @contextmanager
+    def _cursor(self, *, dictionary: bool = False) -> Iterator[Any]:
+        cursor = self.get_connection().cursor(dictionary=dictionary)
+        try:
+            yield cursor
+        finally:
+            cursor.close()
+
+    def get_novel(self, novel_id: int) -> Novel | None:
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute("SELECT * FROM novel WHERE novel_id = %s", (novel_id,))
+            row = cursor.fetchone()
+        return self._row_to_novel(row) if row else None
+
+    def find_novel(self, novel_id: int) -> Novel | None:
+        """Compatibility alias matching the supplied repository style."""
+        return self.get_novel(novel_id)
+
+    def get_novel_statistics(self, novel_id: int) -> NovelStatistics | None:
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                "SELECT * FROM novel_statistics WHERE novel_id = %s",
+                (novel_id,),
+            )
+            row = cursor.fetchone()
+        return self._row_to_statistics(row) if row else None
+
+    def get_author(self, novel_id: int) -> NovelAuthor | None:
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                SELECT a.*
+                FROM novel AS n
+                JOIN novel_author AS a ON a.author_id = n.author_id
+                WHERE n.novel_id = %s
+                """,
+                (novel_id,),
+            )
+            row = cursor.fetchone()
+        return self._row_to_author(row) if row else None
+
+    def get_episodes(self, novel_id: int) -> list[Episode]:
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                "SELECT * FROM episode WHERE novel_id = %s ORDER BY episode_number",
+                (novel_id,),
+            )
+            rows = cursor.fetchall()
+        return [self._row_to_episode(row) for row in rows]
+
+    def get_comments(self, novel_id: int) -> list[Comment]:
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                SELECT * FROM comment
+                WHERE novel_id = %s
+                ORDER BY episode_id, created_at, comment_id
+                """,
+                (novel_id,),
+            )
+            rows = cursor.fetchall()
+        return [self._row_to_comment(row) for row in rows]
+
+    def find_free_novels(self, *, limit: int | None = None) -> list[Novel]:
+        """Return free, non-paid, unfinished novels from the current DB state."""
+        query = (
+            "SELECT * FROM novel "
+            "WHERE free = 1 AND paid_serial = 0 AND finish = 0 "
+            "ORDER BY collected_at DESC, novel_id"
+        )
+        params: tuple[Any, ...] = ()
+        if limit is not None:
+            if limit <= 0:
+                raise ValueError("limit must be greater than zero")
+            query += " LIMIT %s"
+            params = (limit,)
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+        return [self._row_to_novel(row) for row in rows]
+
+    def save_collection(
+        self,
+        novel: Novel,
+        statistics: NovelStatistics,
+        author: NovelAuthor | None,
+        episodes: list[Episode],
+        comments: list[Comment],
+    ) -> None:
+        """Atomically insert or update one complete crawl result."""
+        self._validate_collection(novel, statistics, author, episodes, comments)
+        connection = self.get_connection()
+        cursor = connection.cursor()
+        try:
+            if author is not None:
+                self._upsert_author(cursor, author)
+            self._ensure_reference_rows(cursor, novel, author)
+            self._upsert_novel(cursor, novel)
+            self._upsert_statistics(cursor, statistics)
+            self._upsert_episodes(cursor, episodes)
+            self._upsert_comments(cursor, comments)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+
+    def create_novel(self, novel: Novel) -> None:
+        """Insert or update a novel without child records."""
+        connection = self.get_connection()
+        cursor = connection.cursor()
+        try:
+            self._ensure_reference_rows(cursor, novel, None)
+            self._upsert_novel(cursor, novel)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+
+    def _ensure_reference_rows(
+        self,
+        cursor: Any,
+        novel: Novel,
+        author: NovelAuthor | None,
+    ) -> None:
+        if novel.author_id is not None and author is None:
+            cursor.execute(
+                "INSERT IGNORE INTO novel_author (author_id) VALUES (%s)",
+                (novel.author_id,),
+            )
+        if novel.illustrator_id is not None:
+            cursor.execute(
+                "INSERT IGNORE INTO novel_author (author_id, is_illustrator) VALUES (%s, 1)",
+                (novel.illustrator_id,),
+            )
+        if novel.group_id is not None:
+            cursor.execute(
+                "INSERT IGNORE INTO novel_group (novel_group_id) VALUES (%s)",
+                (novel.group_id,),
+            )
+        for genre_id in (novel.genre_1, novel.genre_2):
+            if genre_id is not None:
+                cursor.execute(
+                    "INSERT IGNORE INTO novel_genre (genre_id) VALUES (%s)",
+                    (genre_id,),
+                )
+
+    def _upsert_author(self, cursor: Any, author: NovelAuthor) -> None:
+        cursor.execute(
+            """
+            INSERT INTO novel_author (author_id, author_name, author_url, is_illustrator)
+            VALUES (%s, %s, %s, %s) AS new
+            ON DUPLICATE KEY UPDATE
+                author_name = new.author_name,
+                author_url = new.author_url,
+                is_illustrator = new.is_illustrator
+            """,
+            (
+                author.author_id,
+                author.author_name,
+                author.author_url,
+                author.is_illustrator,
+            ),
+        )
+
+    def _upsert_novel(self, cursor: Any, novel: Novel) -> None:
+        columns = (
+            "novel_id", "source_url", "title", "introduction", "author_id",
+            "illustrator_id", "origin_cover_url", "group_id", "free", "paid_serial",
+            "exclusive", "pre_exclusive", "adult", "contest", "rental", "pause",
+            "finish", "epub", "ebook", "cp_novel", "created_at", "updated_at",
+            "paid_conversion_open_at", "isbn", "period", "unit_type", "collected_at",
+            "genre_1", "genre_2",
+        )
+        values = tuple(getattr(novel, column) for column in columns)
+        self._upsert(cursor, "novel", columns, values, "novel_id")
+
+    def _upsert_statistics(self, cursor: Any, statistics: NovelStatistics) -> None:
+        columns = (
+            "novel_id", "view_count", "preference_count", "like_count",
+            "chapter_count", "free_chapter_count", "characters", "male_count",
+            "female_count", "age_10s_percent", "age_20s_percent", "age_30s_percent",
+            "age_40s_percent", "age_50s_percent", "source_notice_count", "collected_at",
+        )
+        values = tuple(getattr(statistics, column) for column in columns)
+        self._upsert(cursor, "novel_statistics", columns, values, "novel_id")
+
+    def _upsert_episodes(self, cursor: Any, episodes: Sequence[Episode]) -> None:
+        columns = (
+            "episode_id", "novel_id", "episode_number", "episode_title", "published_at",
+            "access_type", "view_count", "like_count", "comment_count", "page_count",
+            "adult", "paid_conversion_before_entry", "up", "collected_at",
+        )
+        for episode in episodes:
+            values = tuple(getattr(episode, column) for column in columns)
+            self._upsert(cursor, "episode", columns, values, "episode_id")
+
+    def _upsert_comments(self, cursor: Any, comments: Sequence[Comment]) -> None:
+        columns = (
+            "comment_id", "novel_id", "episode_id", "parent_comment_id", "reply_level",
+            "content_type", "comment_text", "like_count", "dislike_count", "created_at",
+            "secret", "report_status", "block_status", "collected_at",
+        )
+        # Insert without the self-reference first so replies may arrive before parents.
+        for comment in comments:
+            values = tuple(
+                None if column == "parent_comment_id" else getattr(comment, column)
+                for column in columns
+            )
+            self._upsert(cursor, "comment", columns, values, "comment_id")
+        for comment in comments:
+            if comment.parent_comment_id is not None:
+                cursor.execute(
+                    "UPDATE comment SET parent_comment_id = %s WHERE comment_id = %s",
+                    (comment.parent_comment_id, comment.comment_id),
+                )
+
+    @staticmethod
+    def _upsert(
+        cursor: Any,
+        table: str,
+        columns: Sequence[str],
+        values: Sequence[Any],
+        primary_key: str,
+    ) -> None:
+        quoted = [f"`{column}`" for column in columns]
+        assignments = ", ".join(
+            f"`{column}` = new.`{column}`" for column in columns if column != primary_key
+        )
+        placeholders = ", ".join(["%s"] * len(columns))
+        query = (
+            f"INSERT INTO `{table}` ({', '.join(quoted)}) "
+            f"VALUES ({placeholders}) AS new "
+            f"ON DUPLICATE KEY UPDATE {assignments}"
+        )
+        cursor.execute(query, tuple(values))
+
+    @staticmethod
+    def _validate_collection(
+        novel: Novel,
+        statistics: NovelStatistics,
+        author: NovelAuthor | None,
+        episodes: Sequence[Episode],
+        comments: Sequence[Comment],
+    ) -> None:
+        if statistics.novel_id != novel.novel_id:
+            raise ValueError("novel and statistics IDs do not match")
+        if author is not None and novel.author_id != author.author_id:
+            raise ValueError("novel and author IDs do not match")
+        if any(item.novel_id != novel.novel_id for item in (*episodes, *comments)):
+            raise ValueError("child entity novel IDs do not match")
+        episode_ids = {episode.episode_id for episode in episodes}
+        if any(comment.episode_id not in episode_ids for comment in comments):
+            raise ValueError("a comment references an episode outside this collection")
+        comment_ids = {comment.comment_id for comment in comments}
+        if any(
+            comment.parent_comment_id is not None
+            and comment.parent_comment_id not in comment_ids
+            for comment in comments
+        ):
+            raise ValueError("a comment references a parent outside this collection")
+
+    @staticmethod
+    def _row_to_novel(row: dict[str, Any]) -> Novel:
+        return Novel(**{field: row.get(field) for field in Novel.__dataclass_fields__})
+
+    @staticmethod
+    def _row_to_statistics(row: dict[str, Any]) -> NovelStatistics:
+        return NovelStatistics(
+            **{field: row.get(field) for field in NovelStatistics.__dataclass_fields__}
+        )
+
+    @staticmethod
+    def _row_to_author(row: dict[str, Any]) -> NovelAuthor:
+        return NovelAuthor(
+            author_id=row["author_id"],
+            author_name=row.get("author_name") or "",
+            author_url=row.get("author_url"),
+            is_illustrator=bool(row.get("is_illustrator")),
+        )
+
+    @staticmethod
+    def _row_to_episode(row: dict[str, Any]) -> Episode:
+        return Episode(**{field: row.get(field) for field in Episode.__dataclass_fields__})
+
+    @staticmethod
+    def _row_to_comment(row: dict[str, Any]) -> Comment:
+        return Comment(**{field: row.get(field) for field in Comment.__dataclass_fields__})
