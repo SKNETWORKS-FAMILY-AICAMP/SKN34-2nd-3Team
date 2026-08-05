@@ -193,6 +193,141 @@ class Repository:
             )
             return cursor.fetchall()
 
+    def list_recommendation_genres(self) -> list[dict[str, Any]]:
+        """Return genres that contain at least one scored novel."""
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                SELECT g.genre_id, g.genre_name, COUNT(DISTINCT n.novel_id) AS novel_count
+                FROM novel_genre AS g
+                JOIN novel AS n ON g.genre_id = n.genre_1
+                JOIN novel_recommendation_score AS r ON r.novel_id = n.novel_id
+                  AND r.scored_episode_count >= 10
+                  AND r.free_score IS NOT NULL
+                WHERE n.free = 1
+                  AND COALESCE(n.paid_serial, 0) = 0
+                  AND COALESCE(n.finish, 0) = 0
+                  AND COALESCE(n.pause, 0) = 0
+                  AND EXISTS (
+                      SELECT 1
+                      FROM episode AS e50
+                      WHERE e50.novel_id = n.novel_id
+                        AND e50.episode_number >= 50
+                  )
+                GROUP BY g.genre_id, g.genre_name
+                ORDER BY
+                    CASE
+                        WHEN LEFT(g.genre_name, 1) BETWEEN '가' AND '힣' THEN 0
+                        ELSE 1
+                    END,
+                    g.genre_name
+                """
+            )
+            return cursor.fetchall()
+
+    def find_recommendations_by_genre(
+        self, genre_id: int, *, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """Return the highest-scoring novels in a genre."""
+        if limit <= 0:
+            raise ValueError("limit must be greater than zero")
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    n.novel_id, n.title, n.source_url, n.introduction,
+                    COALESCE(a.author_name, '') AS author_name,
+                    g.genre_name,
+                    r.free_score AS recommendation_score,
+                    r.free_score, r.paid_score,
+                    r.scored_episode_count, r.average_dropout_rate,
+                    COALESCE(s.view_count, 0) AS view_count,
+                    COALESCE(s.preference_count, 0) AS preference_count,
+                    COALESCE(s.like_count, 0) AS like_count,
+                    GREATEST(
+                        COALESCE(s.chapter_count, 0),
+                        COALESCE(
+                            (
+                                SELECT MAX(e2.episode_number)
+                                FROM episode AS e2
+                                WHERE e2.novel_id = n.novel_id
+                            ),
+                            0
+                        )
+                    ) AS chapter_count,
+                    COALESCE(c.positive_count, 0) AS positive_count,
+                    COALESCE(c.negative_count, 0) AS negative_count,
+                    COALESCE(c.neutral_count, 0) AS neutral_count,
+                    COALESCE(c.total_count, 0) AS comment_count
+                FROM novel AS n
+                JOIN novel_genre AS g
+                  ON g.genre_id = %s AND g.genre_id = n.genre_1
+                JOIN novel_recommendation_score AS r ON r.novel_id = n.novel_id
+                  AND r.scored_episode_count >= 10
+                  AND r.free_score IS NOT NULL
+                LEFT JOIN novel_author AS a ON a.author_id = n.author_id
+                LEFT JOIN novel_statistics AS s ON s.novel_id = n.novel_id
+                LEFT JOIN novel_comment_sentiment AS c ON c.novel_id = n.novel_id
+                WHERE n.free = 1
+                  AND COALESCE(n.paid_serial, 0) = 0
+                  AND COALESCE(n.finish, 0) = 0
+                  AND COALESCE(n.pause, 0) = 0
+                  AND EXISTS (
+                      SELECT 1
+                      FROM episode AS e50
+                      WHERE e50.novel_id = n.novel_id
+                        AND e50.episode_number >= 50
+                  )
+                ORDER BY r.free_score DESC,
+                         r.average_dropout_rate ASC,
+                         r.scored_episode_count DESC,
+                         n.novel_id
+                LIMIT %s
+                """,
+                (genre_id, limit),
+            )
+            return cursor.fetchall()
+
+    def get_recommendation_episode_scores(
+        self, novel_id: int
+    ) -> list[dict[str, Any]]:
+        """Return notebook-compatible per-episode decline inputs for one novel."""
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                WITH ordered_episode AS (
+                    SELECT
+                        episode_id, novel_id, episode_number, access_type, view_count,
+                        LAG(access_type) OVER (
+                            PARTITION BY novel_id ORDER BY episode_number, episode_id
+                        ) AS previous_access_type,
+                        LAG(view_count) OVER (
+                            PARTITION BY novel_id ORDER BY episode_number, episode_id
+                        ) AS previous_view_count
+                    FROM episode
+                    WHERE novel_id = %s
+                )
+                SELECT
+                    episode_number, access_type, previous_view_count, view_count,
+                    CASE
+                        WHEN view_count = 0 THEN 1.0
+                        ELSE GREATEST(
+                            0.0,
+                            (previous_view_count - view_count) / previous_view_count
+                        )
+                    END AS dropout_rate
+                FROM ordered_episode
+                WHERE episode_number > 5
+                  AND access_type = previous_access_type
+                  AND (view_count = 0 OR previous_view_count > 0)
+                  AND view_count IS NOT NULL
+                  AND access_type IN ('FREE', 'PAID')
+                ORDER BY episode_number
+                """,
+                (novel_id,),
+            )
+            return cursor.fetchall()
+
     def save_result(self, novel_id: int, result: dict[str, Any]) -> dict[str, int]:
         """Atomically upsert a crawler result directly into MySQL."""
         novel_data = result.get("novel")

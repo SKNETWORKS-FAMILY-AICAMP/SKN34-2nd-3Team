@@ -105,6 +105,7 @@ CREATE TABLE episode (
     `up` BOOLEAN,
     collected_at DATETIME,
     PRIMARY KEY (episode_id),
+    INDEX idx_episode_novel_number (novel_id, episode_number),
     CONSTRAINT fk_episode_novel
         FOREIGN KEY (novel_id) REFERENCES novel (novel_id)
 ) ENGINE = InnoDB
