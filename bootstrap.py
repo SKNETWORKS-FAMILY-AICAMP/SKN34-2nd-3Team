@@ -437,6 +437,12 @@ def initialize_database(
             env,
             data_dir,
         )
+        _execute_migration(
+            MIGRATION_DIR / "V4__create_paid_conversion_prediction.sql",
+            env_file,
+            env,
+            data_dir,
+        )
 
         loaded_counts = _database_counts(connection, env["DB_NAME"])
         loaded_tables = set(loaded_counts)

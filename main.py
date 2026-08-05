@@ -29,8 +29,15 @@ def run() -> None:
         "pages/novel_basic_info.py",
         title="소설 분석 대시보드",
     )
+    author_page = st.Page(
+        "pages/author_novels.py",
+        title="작가 작품 조회",
+        icon=":material/person_search:",
+    )
 
-    page = st.navigation([recommendation_page, crawler_page, novel_detail])
+    page = st.navigation(
+        [recommendation_page, crawler_page, novel_detail, author_page]
+    )
     page.run()
 
 

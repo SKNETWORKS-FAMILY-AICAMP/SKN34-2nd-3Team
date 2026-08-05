@@ -46,6 +46,22 @@ class NovelService:
         if isinstance(novel_id, bool) or not isinstance(novel_id, int) or novel_id <= 0:
             raise InvalidNovelInputError("작품 ID는 1 이상의 정수여야 합니다.")
 
+    def parse_author_id(self, author_id: str) -> int:
+        value = str(author_id).strip()
+        if not value or not value.isdigit():
+            raise InvalidNovelInputError("작가 ID는 1 이상의 정수여야 합니다.")
+        parsed_author_id = int(value)
+        self._validate_author_id(parsed_author_id)
+        return parsed_author_id
+
+    def _validate_author_id(self, author_id: int) -> None:
+        if (
+            isinstance(author_id, bool)
+            or not isinstance(author_id, int)
+            or author_id <= 0
+        ):
+            raise InvalidNovelInputError("작가 ID는 1 이상의 정수여야 합니다.")
+
     def get_novel(self, novel_id: int) -> Novel | None:
         self._validate_novel_id(novel_id)
         return self.repository.get_novel(novel_id)
@@ -57,6 +73,14 @@ class NovelService:
     def get_author(self, novel_id: int) -> NovelAuthor | None:
         self._validate_novel_id(novel_id)
         return self.repository.get_author(novel_id)
+
+    def get_author_by_id(self, author_id: int) -> NovelAuthor | None:
+        self._validate_author_id(author_id)
+        return self.repository.get_author_by_id(author_id)
+
+    def get_novels_by_author(self, author_id: int) -> list[Novel]:
+        self._validate_author_id(author_id)
+        return self.repository.get_novels_by_author(author_id)
 
     def get_episodes(self, novel_id: int) -> list[Episode]:
         self._validate_novel_id(novel_id)

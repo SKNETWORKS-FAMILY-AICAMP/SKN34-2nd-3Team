@@ -98,6 +98,30 @@ class Repository:
             row = cursor.fetchone()
         return self._row_to_author(row) if row else None
 
+    def get_author_by_id(self, author_id: int) -> NovelAuthor | None:
+        """Return an author using the domain author identifier."""
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                "SELECT * FROM novel_author WHERE author_id = %s",
+                (author_id,),
+            )
+            row = cursor.fetchone()
+        return self._row_to_author(row) if row else None
+
+    def get_novels_by_author(self, author_id: int) -> list[Novel]:
+        """Return every collected novel written by an author."""
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                SELECT * FROM novel
+                WHERE author_id = %s
+                ORDER BY finish, pause, updated_at DESC, novel_id DESC
+                """,
+                (author_id,),
+            )
+            rows = cursor.fetchall()
+        return [self._row_to_novel(row) for row in rows]
+
     def get_episodes(self, novel_id: int) -> list[Episode]:
         with self._cursor(dictionary=True) as cursor:
             cursor.execute(
@@ -111,7 +135,7 @@ class Repository:
         with self._cursor(dictionary=True) as cursor:
             cursor.execute(
                 """
-                SELECT * FROM comment_import
+                SELECT * FROM comment
                 WHERE novel_id = %s
                 ORDER BY episode_id, created_at, comment_id
                 """,
@@ -119,6 +143,21 @@ class Repository:
             )
             rows = cursor.fetchall()
         return [self._row_to_comment(row) for row in rows]
+
+    def get_primary_genre_name(self, novel_id: int) -> str | None:
+        """Return the name of a novel's primary genre."""
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                SELECT g.genre_name
+                FROM novel AS n
+                JOIN novel_genre AS g ON g.genre_id = n.genre_1
+                WHERE n.novel_id = %s
+                """,
+                (novel_id,),
+            )
+            row = cursor.fetchone()
+        return row["genre_name"] if row else None
 
     def find_free_novels(self, *, limit: int | None = None) -> list[Novel]:
         """Return free, non-paid, unfinished novels from the current DB state."""
@@ -668,4 +707,3 @@ class Repository:
     @staticmethod
     def _row_to_comment(row: dict[str, Any]) -> Comment:
         return Comment(**{field: row.get(field) for field in Comment.__dataclass_fields__})
-
