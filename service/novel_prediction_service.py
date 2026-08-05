@@ -94,7 +94,7 @@ class NovelPredictionService:
             input_df.at[0, 'like_count_free'] = getattr(last_ep, 'like_count', 0)
             input_df.at[0, 'comment_count_free'] = getattr(last_ep, 'comment_count', 0)
             
-            genre = getattr(novel, 'genre_best_name', '')
+            genre = self.repository.get_primary_genre_name(novel_id)
             if f'genre_best_name_{genre}' in input_df.columns:
                 input_df.at[0, f'genre_best_name_{genre}'] = 1.0
             elif 'genre_best_name_other_genre' in input_df.columns:
