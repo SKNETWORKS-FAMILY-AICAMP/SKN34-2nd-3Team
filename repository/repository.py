@@ -111,7 +111,7 @@ class Repository:
         with self._cursor(dictionary=True) as cursor:
             cursor.execute(
                 """
-                SELECT * FROM comment
+                SELECT * FROM comment_import
                 WHERE novel_id = %s
                 ORDER BY episode_id, created_at, comment_id
                 """,
@@ -659,3 +659,4 @@ class Repository:
     @staticmethod
     def _row_to_comment(row: dict[str, Any]) -> Comment:
         return Comment(**{field: row.get(field) for field in Comment.__dataclass_fields__})
+
