@@ -27,9 +27,11 @@ class RecommendationService:
     def get_episode_dropout(self, novel_id: int) -> list[dict[str, Any]]:
         return self.repository.get_recommendation_episode_scores(novel_id)
 
-    def get_novel_scores(self, novel_ids: Sequence[int]) -> dict[int, float]:
-        """Return already-stored analysis scores without recomputing them."""
-        return self.repository.get_recommendation_scores(novel_ids)
+    def get_author_analysis(
+        self, novel_ids: Sequence[int]
+    ) -> tuple[dict[int, float], set[int]]:
+        """Return both stored author-work analysis coverages in one bulk lookup."""
+        return self.repository.get_author_analysis(novel_ids)
 
     @staticmethod
     def _decision_label(row: dict[str, Any]) -> str:

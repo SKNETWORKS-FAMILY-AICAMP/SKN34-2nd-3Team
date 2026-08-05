@@ -17,17 +17,29 @@ def serialization_status(novel) -> str:
 
 
 def payment_status(novel) -> str:
-    if novel.free is True:
+    if novel.free == 1:
         return "무료"
-    if novel.paid_serial is True or novel.free is False:
+    if novel.paid_serial == 1 or novel.free == 0:
         return "유료"
     return "무료/유료 정보 없음"
 
 
 def analysis_score_label(score: float | None) -> str:
     if score is None:
-        return "분석 전"
+        return "분석 대상 아님"
     return f"{score:.1f} / 100"
+
+
+def render_analysis_score(score: float | None) -> None:
+    if score is None:
+        st.markdown(
+            '<span style="display:inline-block;padding:0.2rem 0.55rem;'
+            'border-radius:999px;background:#fee2e2;color:#b91c1c;'
+            'font-weight:600;">분석 대상 아님</span>',
+            unsafe_allow_html=True,
+        )
+        return
+    st.write(analysis_score_label(score))
 
 
 st.set_page_config(page_title="작가 작품 조회", layout="wide")
@@ -53,11 +65,22 @@ if st.button("조회", type="primary") or query_author_id:
             st.stop()
 
         novels = service.get_novels_by_author(author_id)
-        scores_by_novel_id = recommendation_service.get_novel_scores(
-            [novel.novel_id for novel in novels]
+        scores_by_novel_id, paid_prediction_novel_ids = (
+            recommendation_service.get_author_analysis(
+                [novel.novel_id for novel in novels]
+            )
         )
         st.subheader(author.author_name or f"작가 {author_id}")
         st.caption(f"작가 ID {author_id} · 총 {len(novels):,}개 작품")
+        score_coverage_col, paid_coverage_col = st.columns(2)
+        with score_coverage_col:
+            with st.container(border=True):
+                st.caption("조회 유지·타깃 점수")
+                st.metric("분석 작품", f"{len(scores_by_novel_id):,} / {len(novels):,}")
+        with paid_coverage_col:
+            with st.container(border=True):
+                st.caption("유료 전환 예측")
+                st.metric("분석 작품", f"{len(paid_prediction_novel_ids):,} / {len(novels):,}")
 
         if not novels:
             st.info("수집된 작품이 없습니다.")
@@ -81,7 +104,7 @@ if st.button("조회", type="primary") or query_author_id:
                     st.write(f"**이용 구분**  \n{payment_status(novel)}")
                     score = scores_by_novel_id.get(novel.novel_id)
                     st.write("**유료 전환 타깃 점수**")
-                    st.write(analysis_score_label(score))
+                    render_analysis_score(score)
     except NovelServiceError as exc:
         st.error(str(exc))
     except Exception as exc:

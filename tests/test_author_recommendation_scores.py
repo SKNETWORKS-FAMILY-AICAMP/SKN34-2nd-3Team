@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import ast
 from pathlib import Path
+from types import SimpleNamespace
 
 from repository.repository import Repository
 from service.recommendation_service import RecommendationService
@@ -22,12 +24,12 @@ class ReadCursor:
         return self.rows
 
 
-def test_repository_bulk_loads_canonical_scores_in_one_query(monkeypatch):
+def test_repository_bulk_loads_both_analysis_coverages_in_one_query(monkeypatch):
     repository = Repository()
     cursor = ReadCursor(
         [
-            {"novel_id": 20, "recommendation_score": 81.25},
-            {"novel_id": 10, "recommendation_score": 47.0},
+            {"novel_id": 20, "recommendation_score": 81.25, "paid_prediction_novel_id": 20},
+            {"novel_id": 10, "recommendation_score": 47.0, "paid_prediction_novel_id": None},
         ]
     )
 
@@ -38,13 +40,15 @@ def test_repository_bulk_loads_canonical_scores_in_one_query(monkeypatch):
 
     monkeypatch.setattr(repository, "_cursor", fake_cursor)
 
-    scores = repository.get_recommendation_scores([20, 10, 20])
+    scores, paid_ids = repository.get_author_analysis([20, 10, 20])
 
     assert scores == {20: 81.25, 10: 47.0}
+    assert paid_ids == {20}
     assert len(cursor.executed) == 1
     query, params = cursor.executed[0]
     assert "r.recommendation_score" in query
-    assert "FROM novel_recommendation_score AS r" in query
+    assert "LEFT JOIN novel_recommendation_score AS r" in query
+    assert "novel_paid_conversion_prediction AS p" in query
     assert "IN (%s, %s)" in query
     assert params == (20, 10)
 
@@ -57,35 +61,59 @@ def test_repository_skips_database_for_empty_novel_ids(monkeypatch):
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("DB queried")),
     )
 
-    assert repository.get_recommendation_scores([]) == {}
+    assert repository.get_author_analysis([]) == ({}, set())
 
 
-def test_recommendation_service_delegates_bulk_score_lookup():
+def test_recommendation_service_delegates_bulk_author_analysis_lookup():
     class StubRepository:
         def __init__(self):
             self.calls = []
 
-        def get_recommendation_scores(self, novel_ids):
+        def get_author_analysis(self, novel_ids):
             self.calls.append(list(novel_ids))
-            return {10: 72.04}
+            return {10: 72.04}, {20}
 
     repository = StubRepository()
     service = RecommendationService(repository)
 
-    assert service.get_novel_scores([10, 20]) == {10: 72.04}
+    assert service.get_author_analysis([10, 20]) == ({10: 72.04}, {20})
     assert repository.calls == [[10, 20]]
 
 
-def test_author_page_uses_service_bulk_scores_and_missing_label():
+def test_author_page_uses_one_bulk_analysis_call_and_coverage_cards():
     source = PAGE.read_text(encoding="utf-8")
 
     assert "RecommendationService" in source
-    assert "recommendation_service.get_novel_scores" in source
-    assert source.index("recommendation_service.get_novel_scores") < source.index(
+    assert "recommendation_service.get_author_analysis" in source
+    assert source.index("recommendation_service.get_author_analysis") < source.index(
         "for novel in novels:"
     )
+    assert "조회 유지·타깃 점수" in source
+    assert "유료 전환 예측" in source
+    assert source.count("분석 작품") >= 2
     assert "유료 전환 타깃 점수" in source
     assert 'f"{score:.1f} / 100"' in source
-    assert '"분석 전"' in source
+    assert '"분석 대상 아님"' in source
+    assert "border-radius" in source
+    assert "#" in source
     assert "recommendation_score" not in source
     assert "find_recommendations_by_genre" not in source
+
+
+def _load_page_function(name):
+    source = PAGE.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    node = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name)
+    module = ast.Module(body=[node], type_ignores=[])
+    namespace = {}
+    exec(compile(module, str(PAGE), "exec"), namespace)
+    return namespace[name]
+
+
+def test_payment_status_accepts_mysql_integer_booleans_and_preserves_unknown():
+    payment_status = _load_page_function("payment_status")
+
+    assert payment_status(SimpleNamespace(free=1, paid_serial=0)) == "무료"
+    assert payment_status(SimpleNamespace(free=0, paid_serial=1)) == "유료"
+    assert payment_status(SimpleNamespace(free=None, paid_serial=1)) == "유료"
+    assert payment_status(SimpleNamespace(free=None, paid_serial=None)) == "무료/유료 정보 없음"

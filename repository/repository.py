@@ -122,30 +122,41 @@ class Repository:
             rows = cursor.fetchall()
         return [self._row_to_novel(row) for row in rows]
 
-    def get_recommendation_scores(
+    def get_author_analysis(
         self, novel_ids: Sequence[int]
-    ) -> dict[int, float]:
-        """Return stored canonical analysis scores for a set of novels."""
+    ) -> tuple[dict[int, float], set[int]]:
+        """Bulk-load stored target scores and paid predictions for author works."""
         unique_ids = list(dict.fromkeys(int(novel_id) for novel_id in novel_ids))
         if not unique_ids:
-            return {}
+            return {}, set()
 
         placeholders = ", ".join(["%s"] * len(unique_ids))
         with self._cursor(dictionary=True) as cursor:
             cursor.execute(
                 f"""
-                SELECT r.novel_id, r.recommendation_score
-                FROM novel_recommendation_score AS r
-                WHERE r.novel_id IN ({placeholders})
-                  AND r.recommendation_score IS NOT NULL
+                SELECT n.novel_id, r.recommendation_score,
+                       p.novel_id AS paid_prediction_novel_id
+                FROM novel AS n
+                LEFT JOIN novel_recommendation_score AS r
+                  ON r.novel_id = n.novel_id
+                LEFT JOIN novel_paid_conversion_prediction AS p
+                  ON p.novel_id = n.novel_id
+                WHERE n.novel_id IN ({placeholders})
                 """,
                 tuple(unique_ids),
             )
             rows = cursor.fetchall()
-        return {
+        scores = {
             int(row["novel_id"]): float(row["recommendation_score"])
             for row in rows
+            if row.get("recommendation_score") is not None
         }
+        paid_prediction_ids = {
+            int(row["paid_prediction_novel_id"])
+            for row in rows
+            if row.get("paid_prediction_novel_id") is not None
+        }
+        return scores, paid_prediction_ids
 
     def get_episodes(self, novel_id: int) -> list[Episode]:
         with self._cursor(dictionary=True) as cursor:
