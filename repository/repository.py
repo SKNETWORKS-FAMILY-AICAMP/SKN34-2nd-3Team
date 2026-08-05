@@ -98,6 +98,30 @@ class Repository:
             row = cursor.fetchone()
         return self._row_to_author(row) if row else None
 
+    def get_author_by_id(self, author_id: int) -> NovelAuthor | None:
+        """Return an author using the domain author identifier."""
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                "SELECT * FROM novel_author WHERE author_id = %s",
+                (author_id,),
+            )
+            row = cursor.fetchone()
+        return self._row_to_author(row) if row else None
+
+    def get_novels_by_author(self, author_id: int) -> list[Novel]:
+        """Return every collected novel written by an author."""
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                SELECT * FROM novel
+                WHERE author_id = %s
+                ORDER BY finish, pause, updated_at DESC, novel_id DESC
+                """,
+                (author_id,),
+            )
+            rows = cursor.fetchall()
+        return [self._row_to_novel(row) for row in rows]
+
     def get_episodes(self, novel_id: int) -> list[Episode]:
         with self._cursor(dictionary=True) as cursor:
             cursor.execute(
