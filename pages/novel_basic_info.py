@@ -19,7 +19,7 @@ from service.novel_service_errors import NovelServiceError
 from repository.repository import Repository
 
 def render_page():
-    st.set_page_config(page_title="소설 기본정보 조회", layout="wide")
+    st.set_page_config(page_title="소설 상세정보 조회 시스템", layout="wide")
     st.title("📖 소설 상세정보 조회 시스템")
 
     try:
@@ -56,7 +56,7 @@ def render_page():
 
     selected_value = st_searchbox(
         search_novel,
-        placeholder="🔍 조회할 소설 ID 또는 작품 타이틀을 입력하세요...",
+        placeholder="🔍 조회할 소설 ID, 타이틀 또는 작품 URL을 입력하세요...",
         key="novel_searchbox",
         clear_on_submit=False
     )
@@ -65,14 +65,29 @@ def render_page():
     target_input = ""
 
     if selected_value:
-        target_input = selected_value
+        if isinstance(selected_value, (dict, tuple, list)):
+            target_input = str(selected_value[1] if isinstance(selected_value, (tuple, list)) and len(selected_value) > 1 else selected_value)
+        else:
+            target_input = str(selected_value)
         should_search = True
     elif query_url and not st.session_state.get("auto_searched", False):
         target_input = query_url
         should_search = True
         st.session_state.auto_searched = True
+    elif st.session_state.get("novel_searchbox"):
+        raw_input = st.session_state.get("novel_searchbox")
+        raw_str = str(raw_input) if not isinstance(raw_input, (str, int, float)) else str(raw_input)
+        if raw_str and ("http" in raw_str or raw_str.isdigit()):
+            target_input = raw_str
+            should_search = True
 
     if should_search:
+        if "munpia.com/novel/detail/" in target_input:
+            import re
+            match = re.search(r'/detail/(\d+)', target_input)
+            if match:
+                target_input = match.group(1)
+
         if not target_input.strip():
             st.warning("소설 ID 또는 작품 URL을 입력해 주세요.")
             return
@@ -131,7 +146,7 @@ def render_page():
                     dict(
                         icon=":material/bar_chart:",
                         title="통계 기반 예측 (전체 평균)",
-                        description="전체 작품의 평균 무료→유료 전환 낙폭을 적용한 수치를 노출합니다.",
+                        description="전체 작품의 평균 무료→유료 전환 낙폭을 일괄 적용합니다.",
                     ),
                 ],
                 key="prediction_model_selector",
