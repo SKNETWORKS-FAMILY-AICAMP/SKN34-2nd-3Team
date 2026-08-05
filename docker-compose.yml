@@ -9,14 +9,16 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
       MYSQL_DATABASE: ${DB_NAME}
-      TZ: Asiz/Seoul
+      TZ: Asia/Seoul
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./db/data:/var/lib/mysql-files:ro
+      - ./db/migration:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${DB_PASSWORD} --silent"]
       interval: 5s
       timeout: 3s
       retries: 20

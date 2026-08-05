@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pandas as pd
 import streamlit as st
 
-from repository.collection_repository import CsvCollectionRepository
+from repository.repository import Repository
 from service import CollectionService, NovelServiceError
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = PROJECT_ROOT / "db" / "data"
 PAGE_SIZE = 20
 
-repository = CsvCollectionRepository(DATA_DIR)
+repository = Repository()
 service = CollectionService(repository=repository)
 
 st.set_page_config(page_title="문피아 작품 수집", page_icon="📚", layout="wide")
@@ -97,7 +93,7 @@ if submitted:
                 progress.progress(100)
                 message.markdown(f"**완료** · {event.elapsed_seconds:.1f}초")
                 status.update(
-                    label="수집 및 CSV 반영 완료",
+                    label="수집 및 DB 저장 완료",
                     state="complete",
                     expanded=False,
                 )

@@ -7,11 +7,11 @@ from entity.novel import Novel
 from entity.novel_author import NovelAuthor
 from entity.novel_statistics import NovelStatistics
 
-from repository.novel_repository import NovelRepository
+from repository.repository import Repository
 from service.novel_service_errors import InvalidNovelInputError
 
 class NovelService:
-    def __init__(self, repository: NovelRepository) -> None:
+    def __init__(self, repository: Repository) -> None:
         self.repository = repository
 
     def parse_novel_id(self, url_or_id: str) -> int:

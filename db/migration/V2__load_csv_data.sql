@@ -100,8 +100,8 @@ SET novel_id = NULLIF(@novel_id, ''),
 LOAD DATA INFILE '/var/lib/mysql-files/episode.csv'
 INTO TABLE episode
 CHARACTER SET utf8mb4
-FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"' ESCAPED BY '\\'
-LINES TERMINATED BY '\r\n'
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"' ESCAPED BY '"'
+LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (@episode_id, @novel_id, @episode_number, @episode_title, @published_at,
  @access_type, @view_count, @like_count, @comment_count, @page_count, @adult,
@@ -190,8 +190,6 @@ SET comment_id = NULLIF(@comment_id, ''),
     report_status = NULLIF(@report_status, ''),
     block_status = CASE LOWER(TRIM(@block_status)) WHEN 'true' THEN 1 WHEN 'false' THEN 0 ELSE NULL END,
     collected_at = STR_TO_DATE(NULLIF(SUBSTRING(@collected_at, 1, 19), ''), '%Y-%m-%dT%H:%i:%s');
-SET FOREIGN_KEY_CHECKS = 1;
-
 -- Keep comments whose parent was not included in the source extract, but remove
 -- the invalid self-reference so every stored foreign-key value is resolvable.
 UPDATE comment AS child
@@ -200,3 +198,5 @@ LEFT JOIN comment AS parent
 SET child.parent_comment_id = NULL
 WHERE child.parent_comment_id IS NOT NULL
   AND parent.comment_id IS NULL;
+
+SET FOREIGN_KEY_CHECKS = 1;
