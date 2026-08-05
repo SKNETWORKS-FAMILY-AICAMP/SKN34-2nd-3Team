@@ -5,7 +5,7 @@ services:
     ports:
       - "${MYSQL_PORT}:3306"
     env_file:
-      - .env
+      - ${BOOTSTRAP_ENV_FILE:-.env}
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
       MYSQL_DATABASE: ${DB_NAME}
@@ -15,8 +15,7 @@ services:
       - --collation-server=utf8mb4_unicode_ci
     volumes:
       - mysql_data:/var/lib/mysql
-      - ${DB_DATA_DIR:-./db/data}:/var/lib/mysql-files:ro
-      - ./db/migration:/docker-entrypoint-initdb.d:ro
+      - ${DB_DATA_DIR:-./db/data}:/var/lib/mysql-files
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${DB_PASSWORD} --silent"]
       interval: 5s
