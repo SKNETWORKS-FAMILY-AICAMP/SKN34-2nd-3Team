@@ -68,7 +68,7 @@ def render_page():
                 target_input = match.group(1)
                 
         try:
-            with st.spinner("📊 기본 작품 정보를 불러오는 중입니다..."):
+            with st.spinner(" 기본 작품 정보를 불러오는 중입니다..."):
                 novel_id = service.parse_novel_id(target_input)
                 novel = service.get_novel(novel_id)
                 
@@ -108,6 +108,53 @@ def render_page():
                     col2.metric("선호작 수", f"{stats.preference_count:,}" if stats.preference_count is not None else "0")
                     col3.metric("총 회차", f"{stats.chapter_count:,}" if stats.chapter_count is not None else "0")
 
+                    st.markdown("##### 👥 독자 성별 및 연령대 비율")
+                    stat_col1, stat_col2 = st.columns(2)
+                    
+                    with stat_col1:
+                        raw_male = stats.male_count if stats.male_count is not None else 0
+                        raw_female = stats.female_count if stats.female_count is not None else 0
+                        total_gender = raw_male + raw_female
+                        
+                        if total_gender > 0:
+                            male_pct = round((raw_male / total_gender) * 100, 1)
+                            female_pct = round((raw_female / total_gender) * 100, 1)
+                        else:
+                            male_pct, female_pct = 50.0, 50.0
+
+                        gender_df = pd.DataFrame({
+                            '성별': ['남성', '여성'],
+                            '비율': [male_pct, female_pct]
+                        })
+                        gender_chart = alt.Chart(gender_df).mark_arc(innerRadius=50).encode(
+                            theta=alt.Theta(field="비율", type="quantitative"),
+                            color=alt.Color(field="성별", type="nominal", scale=alt.Scale(range=["#1f77b4", "#ff7f0e"])),
+                            tooltip=[alt.Tooltip('성별', title='성별'), alt.Tooltip('비율', title='비율 (%)', format='.1f')]
+                        ).properties(title="성별 독자 비율", height=200)
+                        st.altair_chart(gender_chart, width="stretch")
+
+                    with stat_col2:
+                        age_data = {
+                            '연령대': ['10대', '20대', '30대', '40대', '50대 이상'],
+                            '비율': [
+                                stats.age_10s_percent or 0,
+                                stats.age_20s_percent or 0,
+                                stats.age_30s_percent or 0,
+                                stats.age_40s_percent or 0,
+                                stats.age_50s_percent or 0
+                            ]
+                        }
+                        age_df = pd.DataFrame(age_data)
+                        if age_df['비율'].sum() == 0:
+                            age_df['비율'] = [20, 20, 20, 20, 20]
+                        age_chart = alt.Chart(age_df).mark_bar().encode(
+                            x=alt.X('연령대:N', sort=None, title=None, axis=alt.Axis(labelAngle=0)),
+                            y=alt.Y('비율:Q', title=None),
+                            color=alt.Color('연령대:N', legend=None),
+                            tooltip=['연령대', '비율']
+                        ).properties(title="연령대별 독자 비중", height=200)
+                        st.altair_chart(age_chart, width="stretch")
+
             st.markdown("---")
             st.subheader("📈 향후 조회수 예측 시뮬레이션")
             
@@ -129,31 +176,47 @@ def render_page():
             
             is_ml_mode = True if selected_model == 0 or selected_model is None else False
             
-            with st.spinner("📈 AI 예측 모델 및 그래프 데이터를 계산하는 중입니다..."):
+            with st.spinner(" AI 예측 모델 및 그래프 데이터를 계산하는 중입니다..."):
                 prediction_result = prediction_service.get_prediction_data(novel_id, is_ml=is_ml_mode)
                 
                 if prediction_result is not None:
                     pred_df, drop_rate = prediction_result
                     
                     if not pred_df.empty:
+                        if not novel.free and '구분' in pred_df.columns:
+                            episodes_raw = service.get_episodes(novel_id)
+                            free_count = sum(1 for ep in episodes_raw if str(ep.access_type).strip().upper() == 'FREE')
+                            if free_count == 0:
+                                free_count = int(len(pred_df) * 0.3)
+                            
+                            def categorize_segment(row):
+                                if row['구분'] == '실제 조회수':
+                                    if row['회차'] <= free_count:
+                                        return '실제 조회수 (무료 회차)'
+                                    else:
+                                        return '실제 조회수 (유료 회차)'
+                                else:
+                                    return '예상 조회수'
+                            
+                            pred_df['구분'] = pred_df.apply(categorize_segment, axis=1)
+                            color_scale = alt.Scale(domain=['실제 조회수 (무료 회차)', '실제 조회수 (유료 회차)', '예상 조회수'], range=['#1f77b4', "#46c553", '#ff7f0e'])
+                            dash_condition = alt.condition(alt.datum.구분 == '예상 조회수', alt.value([5, 5]), alt.value([0]))
+                        else:
+                            color_scale = alt.Scale(range=['#1f77b4', '#ff7f0e'])
+                            dash_condition = alt.condition(alt.datum.구분 == '실제 조회수', alt.value([0]), alt.value([5, 5]))
+
                         st.metric(
                             label="다음 화(예측 1화) 조회수 예상 낙폭",
                             value=f"-{drop_rate}%",
-                            delta=f"최근 화 대비 {drop_rate}% 감소 예상",
-                            delta_color="inverse"
+                            delta=f"-{drop_rate}% (감소 예상)",
+                            delta_color="normal"
                         )
 
                         chart = alt.Chart(pred_df).mark_line(point=True).encode(
                             x=alt.X("회차:Q", title="회차", scale=alt.Scale(zero=False)),
                             y=alt.Y("조회수:Q", title="조회수"),
-                            color=alt.Color("구분:N", scale=alt.Scale(
-                                range=["#1f77b4", "#ff7f0e"] 
-                            )),
-                            strokeDash=alt.condition(
-                                alt.datum.구분 == "실제 조회수",
-                                alt.value([0]),     
-                                alt.value([5, 5])    
-                            )
+                            color=alt.Color("구분:N", scale=color_scale),
+                            strokeDash=dash_condition
                         ).properties(height=400)
                         
                         st.altair_chart(chart, width="stretch")
@@ -165,6 +228,8 @@ def render_page():
                                 st.info("💡 위 그래프는 수집된 전체 작품의 무료 -> 유료 전환 데이터를 분석하여 도출된 **전체 평균 낙폭치**를 바탕으로 시뮬레이션한 결과입니다.")
                         else:
                             st.info("💡 위 그래프는 수집된 전체 유료 작품 데이터를 분석하여 도출된 **자연 감소율(유지율)**을 바탕으로 시뮬레이션한 결과입니다.")
+                        
+                        st.caption("ℹ️ *본 시뮬레이션 모델은 ±12 내외의 오차율을 보일 수 있습니다.*")
                     else:
                         st.info("그래프를 렌더링하기 위한 데이터가 부족합니다.")
                 else:
@@ -173,7 +238,7 @@ def render_page():
             st.markdown("---")
             st.subheader("📚 회차 및 댓글 상세 정보")
             
-            with st.spinner("📚 회차 및 댓글 상세 데이터를 불러오는 중입니다..."):
+            with st.spinner(" 회차 및 댓글 상세 데이터를 불러오는 중입니다..."):
                 col_ep, col_cm = st.columns([5.5, 4.5])
                 
                 episodes = service.get_episodes(novel_id)
@@ -212,7 +277,7 @@ def render_page():
                     
                     with col_ep:
                         st.markdown(f"**📖 전체 회차 목록 (총 {len(episodes)}화)**")
-                        st.dataframe(ep_df_display, width="stretch", height=500, hide_index=True)
+                        st.dataframe(ep_df_display, width="stretch", height=562, hide_index=True)
                 else:
                     with col_ep:
                         st.info("해당 작품의 회차 데이터가 없습니다.")
