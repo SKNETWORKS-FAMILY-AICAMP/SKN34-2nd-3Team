@@ -11,6 +11,7 @@ import altair as alt
 from dataclasses import asdict
 
 from streamlit_extras.card_selector import card_selector
+from streamlit_searchbox import st_searchbox
 
 from service.novel_service import NovelService
 from service.novel_prediction_service import NovelPredictionService 
@@ -18,12 +19,11 @@ from service.novel_service_errors import NovelServiceError
 from repository.repository import Repository
 
 def render_page():
-    st.set_page_config(page_title="소설 기본정보 조회", layout="wide")
+    st.set_page_config(page_title="소설 상세정보 조회 시스템", layout="wide")
     st.title("📖 소설 상세정보 조회 시스템")
 
     try:
         repository = Repository()
-   
         service = NovelService(repository=repository)
         prediction_service = NovelPredictionService(repository=repository) 
     except Exception as e:
@@ -34,73 +34,76 @@ def render_page():
     
     if "last_query_url" not in st.session_state or st.session_state.last_query_url != query_url:
         st.session_state.last_query_url = query_url
-        st.session_state.input_url = query_url
         st.session_state.auto_searched = False 
-        
-    user_input = st.text_input(
-        "🔍 조회할 소설 ID 또는 작품 URL을 입력하세요:", 
-        key="input_url"
+
+    def search_novel(searchterm: str):
+        if not searchterm:
+            return []
+        return [searchterm]
+
+    selected_value = st_searchbox(
+        search_novel,
+        placeholder="🔍 조회할 소설 ID 또는 작품 URL을 입력하고 Enter를 누르세요...",
+        key="novel_searchbox",
+        clear_on_submit=False
     )
-    
-    is_clicked = st.button("조회")
-    
-    if is_clicked:
-        st.session_state.has_searched = True
-        st.session_state.search_target = user_input
+
+    should_search = False
+    target_input = ""
+
+    if selected_value:
+        target_input = selected_value
+        should_search = True
     elif query_url and not st.session_state.get("auto_searched", False):
-        st.session_state.has_searched = True
-        st.session_state.search_target = query_url
+        target_input = query_url
+        should_search = True
         st.session_state.auto_searched = True
 
-    should_search = st.session_state.get("has_searched", False)
-
     if should_search:
-        target_input = st.session_state.get("search_target", user_input)
-        
         if not target_input.strip():
             st.warning("소설 ID 또는 작품 URL을 입력해 주세요.")
-            st.session_state.has_searched = False
             return
             
         try:
-            novel_id = service.parse_novel_id(target_input)
-            novel = service.get_novel(novel_id)
-            
-            if not novel:
-                st.error(f"❌ 해당 소설을 찾을 수 없습니다. (ID: {novel_id})")
-                return
+            with st.spinner("📊 기본 작품 정보를 불러오는 중입니다..."):
+                novel_id = service.parse_novel_id(target_input)
+                novel = service.get_novel(novel_id)
                 
-            st.markdown("---")
-            
-            col_img, col_info = st.columns([1, 4])
-            with col_img:
-                if novel.origin_cover_url:
-                    st.image(novel.origin_cover_url, width=150)
-            
-            with col_info:
-                st.header(f"📘 {novel.title}")
-                st.write(f"**소설 ID:** {novel.novel_id} | **유료 연재 여부:** {'무료' if novel.free else '유료'}")
-                
-                author = service.get_author(novel_id)
-                if author:
-                    author_str = f"{author.author_name}(일러스트레이터)" if author.is_illustrator else author.author_name
-                else:
-                    author_str = "정보 없음"
-                
-                st.write(f"**작가:** {author_str}")
-                st.write(f"**작품 소개:** {novel.introduction if novel.introduction else '정보 없음'}")
-                
-                if novel.source_url: 
-                    st.markdown(f"🔗 [작품 원본 링크]({novel.source_url})")
-
-            stats = service.get_novel_statistics(novel_id)
-            if stats:
+                if not novel:
+                    st.error(f"❌ 해당 소설을 찾을 수 없습니다. (ID: {novel_id})")
+                    return
+                    
                 st.markdown("---")
-                st.subheader("📊 작품 통계")
-                col1, col2, col3 = st.columns(3)
-                col1.metric("총 조회수", f"{stats.view_count:,}" if stats.view_count is not None else "0")
-                col2.metric("선호작 수", f"{stats.preference_count:,}" if stats.preference_count is not None else "0")
-                col3.metric("총 회차", f"{stats.chapter_count:,}" if stats.chapter_count is not None else "0")
+                
+                col_img, col_info = st.columns([1, 4])
+                with col_img:
+                    if novel.origin_cover_url:
+                        st.image(novel.origin_cover_url, width=150)
+                
+                with col_info:
+                    st.header(f"📘 {novel.title}")
+                    st.write(f"**소설 ID:** {novel.novel_id} | **유료 연재 여부:** {'무료' if novel.free else '유료'}")
+                    
+                    author = service.get_author(novel_id)
+                    if author:
+                        author_str = f"{author.author_name}(일러스트레이터)" if author.is_illustrator else author.author_name
+                    else:
+                        author_str = "정보 없음"
+                    
+                    st.write(f"**작가:** {author_str}")
+                    st.write(f"**작품 소개:** {novel.introduction if novel.introduction else '정보 없음'}")
+                    
+                    if novel.source_url: 
+                        st.markdown(f"🔗 [작품 원본 링크]({novel.source_url})")
+
+                stats = service.get_novel_statistics(novel_id)
+                if stats:
+                    st.markdown("---")
+                    st.subheader("📊 작품 통계")
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("총 조회수", f"{stats.view_count:,}" if stats.view_count is not None else "0")
+                    col2.metric("선호작 수", f"{stats.preference_count:,}" if stats.preference_count is not None else "0")
+                    col3.metric("총 회차", f"{stats.chapter_count:,}" if stats.chapter_count is not None else "0")
 
             st.markdown("---")
             st.subheader("📈 향후 조회수 예측 시뮬레이션")
@@ -123,7 +126,7 @@ def render_page():
             
             is_ml_mode = True if selected_model == 0 or selected_model is None else False
             
-            with st.spinner(" AI 예측 모델 및 그래프 데이터를 계산하는 중입니다..."):
+            with st.spinner("📈 AI 예측 모델 및 그래프 데이터를 계산하는 중입니다..."):
                 prediction_result = prediction_service.get_prediction_data(novel_id, is_ml=is_ml_mode)
                 
                 if prediction_result is not None:
@@ -167,7 +170,7 @@ def render_page():
             st.markdown("---")
             st.subheader("📚 회차 및 댓글 상세 정보")
             
-            with st.spinner(" 회차 및 댓글 상세 데이터를 불러오는 중입니다..."):
+            with st.spinner("📚 회차 및 댓글 상세 데이터를 불러오는 중입니다..."):
                 col_ep, col_cm = st.columns([5.5, 4.5])
                 
                 episodes = service.get_episodes(novel_id)
@@ -212,50 +215,31 @@ def render_page():
                         st.info("해당 작품의 회차 데이터가 없습니다.")
                         ep_df_display = pd.DataFrame()
 
-# 2. 오른쪽: 회차별 댓글 연동
                 with col_cm:
-                    # 작품 전체의 공식 총 댓글 수 계산
                     total_comments_official = 0
                     if not ep_df_display.empty and '댓글 수' in ep_df_display.columns:
                         total_comments_official = int(ep_df_display['댓글 수'].sum())
                     
                     st.markdown(f"**💬 회차별 댓글 목록 (전체 {total_comments_official}개)**")
                     
-                    if comments and not ep_df_display.empty:
-                        cm_df = pd.DataFrame([asdict(cm) for cm in comments])
+                    ep_numbers = ep_df_display['회차 번호'].tolist() if not ep_df_display.empty and '회차 번호' in ep_df_display.columns else []
+                    
+                    if ep_numbers:
+                        options = ["전체 댓글"] + ep_numbers
                         
-                        ep_numbers = ep_df_display['회차 번호'].tolist() if '회차 번호' in ep_df_display.columns else []
+                        selected_option = st.selectbox(
+                            "👇 댓글을 확인할 회차 번호를 선택하세요:", 
+                            options, 
+                            index=0
+                        )
                         
-                        if ep_numbers:
-                            # '전체 댓글' 옵션을 최상단에 추가
-                            options = ["전체 댓글"] + ep_numbers
-                            
-                            selected_option = st.selectbox(
-                                "👇 댓글을 확인할 회차 번호를 선택하세요:", 
-                                options, 
-                                index=0 # 기본값: 전체 댓글
-                            )
-                            
-                            filtered_cm = pd.DataFrame()
-                            
-                            # 해당 작품에 속한 모든 회차의 글로벌 episode_id 추출
-                            valid_ep_ids = [
-                                str(ep.episode_id).split('.')[0].strip() 
-                                for ep in episodes if ep.episode_id
-                            ]
-                            
-                            # ==========================================
-                            # 🚀 선택지에 따른 필터링 분기
-                            # ==========================================
+                        cm_df = pd.DataFrame([asdict(cm) for cm in comments]) if comments else pd.DataFrame()
+                        filtered_cm = pd.DataFrame()
+                        
+                        if not cm_df.empty:
                             if selected_option == "전체 댓글":
-                                # 작품의 전체 회차에 해당하는 댓글을 회차 상관없이 모두 추출
-                                if 'episode_id' in cm_df.columns and valid_ep_ids:
-                                    cm_df['clean_ep_id'] = cm_df['episode_id'].astype(str).str.split('.').str[0].str.strip()
-                                    filtered_cm = cm_df[cm_df['clean_ep_id'].isin(valid_ep_ids)].copy()
-                                else:
-                                    filtered_cm = cm_df.copy()
+                                filtered_cm = cm_df.copy()
                             else:
-                                # 특정 회차 선택 시 해당 회차의 episode_id로 조인
                                 str_selected_ep = str(selected_option).split('.')[0]
                                 target_ep = None
                                 
@@ -270,59 +254,49 @@ def render_page():
                                     if 'episode_id' in cm_df.columns:
                                         cm_df['clean_ep_id'] = cm_df['episode_id'].astype(str).str.split('.').str[0].str.strip()
                                         filtered_cm = cm_df[cm_df['clean_ep_id'] == global_ep_id].copy()
-                            
-                            # ==========================================
-                            # 렌더링 영역
-                            # ==========================================
-                            if not filtered_cm.empty or selected_option == "전체 댓글":
-                                if selected_option == "전체 댓글":
-                                    # 공식 전체 댓글 수(total_comments_official)를 상단 메시지에 표시
-                                    st.success(f"전체 댓글 ({total_comments_official}개)")
-                                else:
-                                    st.success(f"{selected_option}화 댓글 ({len(filtered_cm)}개)")
-                                
-                                if not filtered_cm.empty:
-                                    if 'created_at' in filtered_cm.columns:
-                                        filtered_cm['created_at'] = pd.to_datetime(filtered_cm['created_at']).dt.strftime('%Y-%m-%d')
-                                        
-                                    cm_rename_cols = {
-                                        'comment_text': '댓글 내용',
-                                        'like_count': '좋아요 수',
-                                        'dislike_count': '싫어요 수',
-                                        'created_at': '작성 시간'
-                                    }
-                                    
-                                    cm_rename_cols = {k: v for k, v in cm_rename_cols.items() if k in filtered_cm.columns}
-                                    filtered_cm = filtered_cm.rename(columns=cm_rename_cols)
-                                    
-                                    cm_display_cols = list(cm_rename_cols.values())
-                                    filtered_cm_display = filtered_cm[cm_display_cols]
-                                    
-                                    # 정렬 버튼 (왼쪽 정렬)
-                                    sort_option = st.radio(
-                                        "정렬",
-                                        ["과거순", "최신순", "좋아요순"],
-                                        horizontal=True,
-                                        label_visibility="collapsed"
-                                    )
-                                    
-                                    if sort_option == "과거순" and "작성 시간" in filtered_cm_display.columns:
-                                        filtered_cm_display = filtered_cm_display.sort_values(by="작성 시간", ascending=True)
-                                    elif sort_option == "최신순" and "작성 시간" in filtered_cm_display.columns:
-                                        filtered_cm_display = filtered_cm_display.sort_values(by="작성 시간", ascending=False)
-                                    elif sort_option == "좋아요순" and "좋아요 수" in filtered_cm_display.columns:
-                                        filtered_cm_display['좋아요 수'] = pd.to_numeric(filtered_cm_display['좋아요 수'], errors='coerce')
-                                        filtered_cm_display = filtered_cm_display.sort_values(by="좋아요 수", ascending=False)
-
-                                    st.dataframe(filtered_cm_display, width="stretch", height=350, hide_index=True)
-                                else:
-                                    st.info("수집된 댓글 목록이 없습니다.")
+                        
+                        if not filtered_cm.empty:
+                            if selected_option == "전체 댓글":
+                                st.success(f"전체 수집된 댓글 ({len(filtered_cm)}개)")
                             else:
-                                st.info(f"{selected_option}화에 표시할 댓글이 없습니다.")
+                                st.success(f"{selected_option}화 수집된 댓글 ({len(filtered_cm)}개)")
+                            
+                            if 'created_at' in filtered_cm.columns:
+                                filtered_cm['created_at'] = pd.to_datetime(filtered_cm['created_at']).dt.strftime('%Y-%m-%d')
+                                
+                            cm_rename_cols = {
+                                'comment_text': '댓글 내용',
+                                'like_count': '좋아요 수',
+                                'dislike_count': '싫어요 수',
+                                'created_at': '작성 시간'
+                            }
+                            
+                            cm_rename_cols = {k: v for k, v in cm_rename_cols.items() if k in filtered_cm.columns}
+                            filtered_cm = filtered_cm.rename(columns=cm_rename_cols)
+                            
+                            cm_display_cols = list(cm_rename_cols.values())
+                            filtered_cm_display = filtered_cm[cm_display_cols]
+                            
+                            sort_option = st.radio(
+                                "정렬",
+                                ["과거순", "최신순", "좋아요순"],
+                                horizontal=True,
+                                label_visibility="collapsed"
+                            )
+                            
+                            if sort_option == "과거순" and "작성 시간" in filtered_cm_display.columns:
+                                filtered_cm_display = filtered_cm_display.sort_values(by="작성 시간", ascending=True)
+                            elif sort_option == "최신순" and "작성 시간" in filtered_cm_display.columns:
+                                filtered_cm_display = filtered_cm_display.sort_values(by="작성 시간", ascending=False)
+                            elif sort_option == "좋아요순" and "좋아요 수" in filtered_cm_display.columns:
+                                filtered_cm_display['좋아요 수'] = pd.to_numeric(filtered_cm_display['좋아요 수'], errors='coerce')
+                                filtered_cm_display = filtered_cm_display.sort_values(by="좋아요 수", ascending=False)
+
+                            st.dataframe(filtered_cm_display, width="stretch", height=350, hide_index=True)
                         else:
-                            st.info("회차 번호 기준이 없어 댓글을 연동할 수 없습니다.")
+                            st.warning("⚠️ 해당 기준에 표시할 수집된 텍스트 데이터가 DB에 없습니다.")
                     else:
-                        st.info("해당 작품에 달린 댓글 데이터가 없습니다.")
+                        st.info("해당 작품에 연동할 회차 정보가 없습니다.")
                         
         except NovelServiceError as nse:
             st.error(f"⚠️ {nse}")
