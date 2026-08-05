@@ -2,14 +2,14 @@ from __future__ import annotations
 import pandas as pd
 from typing import Tuple
 
-from repository.novel_repository import NovelRepository
+from repository.repository import Repository
 
 class NovelPredictionService:
     
     _cached_drop_rate: float | None = None
     _cached_decay_rate: float | None = None
 
-    def __init__(self, repository: NovelRepository) -> None:
+    def __init__(self, repository: Repository) -> None:
         self.repository = repository
 
     def _calculate_actual_statistics(self) -> Tuple[float, float]:
@@ -17,17 +17,10 @@ class NovelPredictionService:
             return NovelPredictionService._cached_drop_rate, NovelPredictionService._cached_decay_rate
 
         try:
-            if not hasattr(self.repository, "episodes_csv_path"):
+            rows = self.repository.get_episode_statistics()
+            if not rows:
                 return 60.0, 0.95
-
-            csv_path = self.repository.episodes_csv_path
-            
-            df = pd.read_csv(
-                csv_path, 
-                usecols=["work_id", "episode_number", "view_count", "access_type"],
-                engine="c",
-                low_memory=False
-            )
+            df = pd.DataFrame(rows).rename(columns={"novel_id": "work_id"})
             
             df = df.dropna(subset=["view_count", "access_type"])
             df["access_type"] = df["access_type"].astype(str).str.upper().str.strip()

@@ -4,12 +4,6 @@ class NovelServiceError(Exception):
 class InvalidNovelInputError(NovelServiceError):
     """작품 주소 또는 작품 ID 입력 오류."""
 
-class CsvFileError(NovelServiceError):
-    """CSV 파일 접근 오류."""
-
-class CsvSchemaError(NovelServiceError):
-    """CSV 구조 또는 Entity 변환 오류."""
-
 class CollectionError(NovelServiceError):
     """문피아 공개 데이터 수집 오류."""
 

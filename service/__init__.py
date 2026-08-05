@@ -1,8 +1,6 @@
 from typing import TYPE_CHECKING
 
 from service.novel_service_errors import (
-    CsvFileError,
-    CsvSchemaError,
     CollectionApiError,
     CollectionBlockedError,
     CollectionError,
@@ -37,8 +35,6 @@ __all__ = [
     "NovelPredictionService", 
     "NovelServiceError",
     "InvalidNovelInputError",
-    "CsvFileError",
-    "CsvSchemaError",
     "CollectionError",
     "CollectionHttpError",
     "CollectionBlockedError",
