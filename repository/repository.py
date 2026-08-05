@@ -122,6 +122,31 @@ class Repository:
             rows = cursor.fetchall()
         return [self._row_to_novel(row) for row in rows]
 
+    def get_recommendation_scores(
+        self, novel_ids: Sequence[int]
+    ) -> dict[int, float]:
+        """Return stored canonical analysis scores for a set of novels."""
+        unique_ids = list(dict.fromkeys(int(novel_id) for novel_id in novel_ids))
+        if not unique_ids:
+            return {}
+
+        placeholders = ", ".join(["%s"] * len(unique_ids))
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                f"""
+                SELECT r.novel_id, r.recommendation_score
+                FROM novel_recommendation_score AS r
+                WHERE r.novel_id IN ({placeholders})
+                  AND r.recommendation_score IS NOT NULL
+                """,
+                tuple(unique_ids),
+            )
+            rows = cursor.fetchall()
+        return {
+            int(row["novel_id"]): float(row["recommendation_score"])
+            for row in rows
+        }
+
     def get_episodes(self, novel_id: int) -> list[Episode]:
         with self._cursor(dictionary=True) as cursor:
             cursor.execute(
@@ -183,30 +208,90 @@ class Repository:
             return cursor.fetchone() is not None
 
     def list_novels(
-        self, page: int, page_size: int
+        self,
+        page: int,
+        page_size: int,
+        *,
+        genre_id: int | None = None,
+        serial_status: str | None = None,
+        min_view_count: int = 0,
+        min_preference_count: int = 0,
+        min_chapter_count: int = 0,
     ) -> tuple[list[dict[str, Any]], int]:
         """Return one DB-backed page for the collection screen."""
         if page_size <= 0:
             raise ValueError("page_size must be greater than zero")
         page = max(1, int(page))
+        filters: list[str] = []
+        params: list[Any] = []
+        if genre_id is not None:
+            filters.append("(n.genre_1 = %s OR n.genre_2 = %s)")
+            params.extend((genre_id, genre_id))
+        status_filters = {
+            "serializing": "n.finish = 0 AND n.pause = 0",
+            "paused": "n.finish = 0 AND n.pause = 1",
+            "finished": "n.finish = 1",
+            "unknown": "(n.finish IS NULL OR n.pause IS NULL)",
+        }
+        if serial_status in status_filters:
+            filters.append(status_filters[serial_status])
+        filters.extend(
+            (
+                "COALESCE(s.view_count, 0) >= %s",
+                "COALESCE(s.preference_count, 0) >= %s",
+                "COALESCE(s.chapter_count, 0) >= %s",
+            )
+        )
+        params.extend(
+            (
+                max(0, int(min_view_count)),
+                max(0, int(min_preference_count)),
+                max(0, int(min_chapter_count)),
+            )
+        )
+        where_clause = " WHERE " + " AND ".join(filters)
         with self._cursor(dictionary=True) as cursor:
-            cursor.execute("SELECT COUNT(*) AS total FROM novel")
+            cursor.execute(
+                "SELECT COUNT(*) AS total FROM novel AS n "
+                "LEFT JOIN novel_statistics AS s ON s.novel_id = n.novel_id"
+                + where_clause,
+                tuple(params),
+            )
             total = int(cursor.fetchone()["total"])
             cursor.execute(
-                """
+                f"""
                 SELECT n.novel_id, n.title, COALESCE(a.author_name, '') AS author_name,
-                       n.free, n.paid_serial, n.finish, s.view_count,
-                       s.preference_count, s.chapter_count, n.collected_at
+                       n.free, n.finish, n.pause, s.view_count,
+                       s.preference_count, s.chapter_count, n.collected_at,
+                       g1.genre_name AS genre_1_name,
+                       g2.genre_name AS genre_2_name
                 FROM novel AS n
                 LEFT JOIN novel_author AS a ON a.author_id = n.author_id
                 LEFT JOIN novel_statistics AS s ON s.novel_id = n.novel_id
+                LEFT JOIN novel_genre AS g1 ON g1.genre_id = n.genre_1
+                LEFT JOIN novel_genre AS g2 ON g2.genre_id = n.genre_2
+                {where_clause}
                 ORDER BY n.novel_id
                 LIMIT %s OFFSET %s
                 """,
-                (page_size, (page - 1) * page_size),
+                (*params, page_size, (page - 1) * page_size),
             )
             rows = cursor.fetchall()
         return rows, total
+
+    def list_genre_options(self) -> list[tuple[int, str]]:
+        """Return named schema genres for the collection-page filter."""
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                SELECT genre_id, genre_name
+                FROM novel_genre
+                WHERE genre_name IS NOT NULL AND genre_name <> ''
+                ORDER BY genre_name, genre_id
+                """
+            )
+            rows = cursor.fetchall()
+        return [(int(row["genre_id"]), str(row["genre_name"])) for row in rows]
 
     def find_page(self, novel_id: int, page_size: int) -> int:
         if page_size <= 0:

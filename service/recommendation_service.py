@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Sequence
 
 from repository.repository import Repository
 
@@ -26,6 +26,10 @@ class RecommendationService:
 
     def get_episode_dropout(self, novel_id: int) -> list[dict[str, Any]]:
         return self.repository.get_recommendation_episode_scores(novel_id)
+
+    def get_novel_scores(self, novel_ids: Sequence[int]) -> dict[int, float]:
+        """Return already-stored analysis scores without recomputing them."""
+        return self.repository.get_recommendation_scores(novel_ids)
 
     @staticmethod
     def _decision_label(row: dict[str, Any]) -> str:

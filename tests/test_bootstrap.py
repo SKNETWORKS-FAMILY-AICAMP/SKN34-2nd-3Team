@@ -161,6 +161,7 @@ def test_post_migration_validation_rejects_silent_zero_row_import(
         "V1__create_initial_schema.sql",
         "V2__load_csv_data.sql",
         "V3__create_recommendation_dashboard.sql",
+        "V4__create_paid_conversion_prediction.sql",
     ]
 
 
