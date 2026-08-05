@@ -196,3 +196,180 @@ def test_comment_import_matches_current_comment_csv_shape():
         "@commenter_nickname, @commenter_blog_url, @is_novel_author,\n"
         " @source_parent_comment_id, @crawl_status)"
     ) in comment_sql
+
+
+def test_prepare_application_runs_preanalysis_after_database_initialization(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    env_file = tmp_path / "custom.env"
+    env_file.write_text("DB_PASSWORD=secret\nDB_NAME=custom_db\n", encoding="utf-8")
+    calls = []
+    factory_ids = []
+
+    monkeypatch.setattr(
+        bootstrap,
+        "download_dataset",
+        lambda data_dir: calls.append(("download", data_dir)),
+    )
+    monkeypatch.setattr(
+        bootstrap,
+        "start_mysql",
+        lambda loaded_env_file, env: calls.append(
+            ("start", loaded_env_file, env["DB_NAME"])
+        ) or "container-id",
+    )
+    monkeypatch.setattr(
+        bootstrap,
+        "wait_for_mysql",
+        lambda container_id, env, timeout: calls.append(
+            ("wait", container_id, env["DB_NAME"], timeout)
+        ),
+    )
+    monkeypatch.setattr(
+        bootstrap,
+        "initialize_database",
+        lambda loaded_env_file, env, data_dir: calls.append(
+            ("initialize", loaded_env_file, env["DB_NAME"], data_dir)
+        ),
+    )
+
+    class RecommendationService:
+        def __init__(self, connection_factory):
+            factory_ids.append(id(connection_factory))
+
+        def refresh_all(self):
+            calls.append(("recommendation",))
+
+    class PaidService:
+        def __init__(self, connection_factory):
+            factory_ids.append(id(connection_factory))
+
+        def train_and_predict_all(self):
+            calls.append(("paid",))
+            return type(
+                "Result",
+                (),
+                {"trained_count": 123, "candidate_count": 45, "model_mae": 0.06789},
+            )()
+
+    monkeypatch.setattr(bootstrap, "RecommendationMetricService", RecommendationService)
+    monkeypatch.setattr(bootstrap, "PaidConversionModelService", PaidService)
+
+    bootstrap.prepare_application(env_file, tmp_path / "data", mysql_timeout=7)
+
+    assert [call[0] for call in calls] == [
+        "download",
+        "start",
+        "wait",
+        "initialize",
+        "recommendation",
+        "paid",
+    ]
+    assert factory_ids[0] == factory_ids[1]
+    assert (
+        "trained=123 candidates=45 conversion_mae=0.0679"
+        in capsys.readouterr().out
+    )
+
+
+def test_prepare_application_shared_factory_uses_custom_environment(monkeypatch, tmp_path):
+    env_file = tmp_path / "custom.env"
+    env_file.write_text(
+        "DB_HOST=custom-host\nMYSQL_PORT=4407\nDB_USER=custom-user\n"
+        "DB_PASSWORD=custom-password\nDB_NAME=custom-db\n",
+        encoding="utf-8",
+    )
+    received_envs = []
+    service_factories = []
+
+    monkeypatch.setattr(bootstrap, "download_dataset", lambda *_: None)
+    monkeypatch.setattr(bootstrap, "start_mysql", lambda *_: "container-id")
+    monkeypatch.setattr(bootstrap, "wait_for_mysql", lambda *_: None)
+    monkeypatch.setattr(bootstrap, "initialize_database", lambda *_: None)
+    monkeypatch.setattr(
+        bootstrap,
+        "_connect",
+        lambda env: received_envs.append(dict(env)) or object(),
+    )
+
+    class Service:
+        def __init__(self, connection_factory):
+            service_factories.append(connection_factory)
+
+        def refresh_all(self):
+            service_factories[-1]()
+
+    class PaidService:
+        def __init__(self, connection_factory):
+            service_factories.append(connection_factory)
+
+        def train_and_predict_all(self):
+            service_factories[-1]()
+            return type(
+                "Result",
+                (),
+                {"trained_count": 1, "candidate_count": 2, "model_mae": 0.25},
+            )()
+
+    monkeypatch.setattr(bootstrap, "RecommendationMetricService", Service)
+    monkeypatch.setattr(bootstrap, "PaidConversionModelService", PaidService)
+
+    bootstrap.prepare_application(env_file, tmp_path / "data")
+
+    assert service_factories[0] is service_factories[1]
+    assert [env["DB_NAME"] for env in received_envs] == ["custom-db", "custom-db"]
+    assert all(env["DB_HOST"] == "custom-host" for env in received_envs)
+
+
+@pytest.mark.parametrize(
+    ("failing_service", "expected_message"),
+    [
+        ("recommendation", "RecommendationMetricService.refresh_all failed"),
+        ("paid", "PaidConversionModelService.train_and_predict_all failed"),
+    ],
+)
+def test_prepare_application_wraps_preanalysis_failure_with_cause(
+    monkeypatch,
+    tmp_path,
+    failing_service,
+    expected_message,
+):
+    env_file = tmp_path / "custom.env"
+    env_file.write_text("DB_PASSWORD=secret\nDB_NAME=test\n", encoding="utf-8")
+    original = ValueError("analysis exploded")
+
+    monkeypatch.setattr(bootstrap, "download_dataset", lambda *_: None)
+    monkeypatch.setattr(bootstrap, "start_mysql", lambda *_: "container-id")
+    monkeypatch.setattr(bootstrap, "wait_for_mysql", lambda *_: None)
+    monkeypatch.setattr(bootstrap, "initialize_database", lambda *_: None)
+
+    class RecommendationService:
+        def __init__(self, connection_factory):
+            pass
+
+        def refresh_all(self):
+            if failing_service == "recommendation":
+                raise original
+
+    class PaidService:
+        def __init__(self, connection_factory):
+            pass
+
+        def train_and_predict_all(self):
+            if failing_service == "paid":
+                raise original
+            return type(
+                "Result",
+                (),
+                {"trained_count": 1, "candidate_count": 2, "model_mae": 0.25},
+            )()
+
+    monkeypatch.setattr(bootstrap, "RecommendationMetricService", RecommendationService)
+    monkeypatch.setattr(bootstrap, "PaidConversionModelService", PaidService)
+
+    with pytest.raises(bootstrap.BootstrapError, match=expected_message) as caught:
+        bootstrap.prepare_application(env_file, tmp_path / "data")
+
+    assert caught.value.__cause__ is original
