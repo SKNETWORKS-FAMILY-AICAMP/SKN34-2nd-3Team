@@ -205,6 +205,7 @@ def _run(
             check=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             input=input_text,
             env=None if env is None else dict(env),
         )

@@ -29,18 +29,18 @@ class RecommendationService:
 
     @staticmethod
     def _decision_label(row: dict[str, Any]) -> str:
-        score = float(row.get("recommendation_score") or 0)
-        if score >= 80:
-            return "최우선 검토"
-        if score >= 65:
-            return "적극 검토"
-        if score >= 50:
-            return "관찰 후보"
-        return "보류"
+        return str(row.get("view_grade") or "아주 낮음")
 
     @staticmethod
     def _build_reason(row: dict[str, Any]) -> str:
         score = float(row.get("recommendation_score") or 0)
+        retention = float(row.get("retention_score") or 0)
+        reference_views = int(row.get("reference_view_count") or 0)
+        view_scale_max = int(row.get("view_scale_max") or 100000)
+        view_grade = str(row.get("view_grade") or "아주 낮음")
+        predicted_purchases = int(row.get("predicted_purchase_count") or 0)
+        predicted_conversion = float(row.get("predicted_conversion_rate") or 0) * 100
+        predicted_paid_dropout = float(row.get("predicted_paid_dropout_rate") or 1) * 100
         dropout = float(row.get("average_dropout_rate") or 0) * 100
         preferences = int(row.get("preference_count") or 0)
         positive = int(row.get("positive_count") or 0)
@@ -48,18 +48,16 @@ class RecommendationService:
         neutral = int(row.get("neutral_count") or 0)
         total_comments = positive + negative + neutral
 
-        if score >= 80:
-            score_reason = "무료 회차의 독자 유지력이 전체 작품 중 최상위권입니다."
-        elif score >= 65:
-            score_reason = "무료 회차의 독자 유지력이 유료 전환 검토 기준에 충분히 경쟁력이 있습니다."
-        elif score >= 50:
-            score_reason = "독자 유지력은 중상위권으로, 추가 연재 추이를 확인할 가치가 있습니다."
-        else:
-            score_reason = "현재 독자 유지력만으로는 즉시 전환보다 관찰이 적합합니다."
-
         parts = [
-            f"노트북 산식으로 계산한 무료 구간 점수는 {score:.1f}점입니다. {score_reason}",
-            f"1~5화와 무료·유료 전환 경계를 제외한 회차의 평균 이탈률은 {dropout:.2f}%입니다.",
+            f"최신 게시일보다 7일 이상 지난 기준 회차의 조회수는 {reference_views:,}회로, "
+            f"10~{view_scale_max:,}회 로그 구간에서 조회 규모 등급은 '{view_grade}'입니다.",
+            f"26화 이후 무료 구간의 독자 유지 점수는 {retention:.1f}점이며 "
+            f"평균 이탈률은 {dropout:.2f}%입니다.",
+            f"조회 규모가 결정한 20점 구간 안에서 유지 점수를 반영한 최종 타깃 점수는 "
+            f"{score:.1f}점입니다.",
+            f"과거 25화 FREE→첫 유료 회차 전환 사례를 학습한 모델은 "
+            f"구매 전환율 {predicted_conversion:.1f}%, 예상 구매 {predicted_purchases:,}건, "
+            f"예상 유료 이탈률 {predicted_paid_dropout:.1f}%로 추정합니다.",
         ]
         if preferences:
             parts.append(
