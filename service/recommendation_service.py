@@ -29,9 +29,34 @@ class RecommendationService:
 
     def get_author_analysis(
         self, novel_ids: Sequence[int]
-    ) -> tuple[dict[int, float], set[int]]:
-        """Return both stored author-work analysis coverages in one bulk lookup."""
-        return self.repository.get_author_analysis(novel_ids)
+    ) -> tuple[dict[int, float], dict[int, float]]:
+        """Return target and combined retention scores from one bulk lookup."""
+        target_scores, retention_parts = self.repository.get_author_analysis(novel_ids)
+        retention_scores = {
+            novel_id: combined
+            for novel_id, parts in retention_parts.items()
+            if (combined := self._combine_retention_scores(*parts)) is not None
+        }
+        return target_scores, retention_scores
+
+    @staticmethod
+    def _combine_retention_scores(
+        free_retention: float | None, paid_retention: float | None
+    ) -> float | None:
+        available = [
+            score for score in (free_retention, paid_retention) if score is not None
+        ]
+        return sum(available) / len(available) if available else None
+
+    @staticmethod
+    def author_average_retention(
+        retention_scores: dict[int, float],
+    ) -> tuple[float | None, int]:
+        """Equal-weight the combined retention value of each reflected work."""
+        reflected_count = len(retention_scores)
+        if not reflected_count:
+            return None, 0
+        return sum(retention_scores.values()) / reflected_count, reflected_count
 
     @staticmethod
     def _decision_label(row: dict[str, Any]) -> str:

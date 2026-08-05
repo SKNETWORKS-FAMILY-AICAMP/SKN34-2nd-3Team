@@ -124,23 +124,24 @@ class Repository:
 
     def get_author_analysis(
         self, novel_ids: Sequence[int]
-    ) -> tuple[dict[int, float], set[int]]:
-        """Bulk-load stored target scores and paid predictions for author works."""
+    ) -> tuple[
+        dict[int, float],
+        dict[int, tuple[float | None, float | None]],
+    ]:
+        """Bulk-load stored target and retention scores for author works."""
         unique_ids = list(dict.fromkeys(int(novel_id) for novel_id in novel_ids))
         if not unique_ids:
-            return {}, set()
+            return {}, {}
 
         placeholders = ", ".join(["%s"] * len(unique_ids))
         with self._cursor(dictionary=True) as cursor:
             cursor.execute(
                 f"""
                 SELECT n.novel_id, r.recommendation_score,
-                       p.novel_id AS paid_prediction_novel_id
+                       r.retention_score, r.paid_score
                 FROM novel AS n
                 LEFT JOIN novel_recommendation_score AS r
                   ON r.novel_id = n.novel_id
-                LEFT JOIN novel_paid_conversion_prediction AS p
-                  ON p.novel_id = n.novel_id
                 WHERE n.novel_id IN ({placeholders})
                 """,
                 tuple(unique_ids),
@@ -151,12 +152,18 @@ class Repository:
             for row in rows
             if row.get("recommendation_score") is not None
         }
-        paid_prediction_ids = {
-            int(row["paid_prediction_novel_id"])
+        retention_parts = {
+            int(row["novel_id"]): (
+                float(row["retention_score"])
+                if row.get("retention_score") is not None
+                else None,
+                float(row["paid_score"])
+                if row.get("paid_score") is not None
+                else None,
+            )
             for row in rows
-            if row.get("paid_prediction_novel_id") is not None
         }
-        return scores, paid_prediction_ids
+        return scores, retention_parts
 
     def get_episodes(self, novel_id: int) -> list[Episode]:
         with self._cursor(dictionary=True) as cursor:
