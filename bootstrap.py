@@ -383,6 +383,12 @@ def initialize_database(
             env,
             data_dir,
         )
+        _execute_migration(
+            MIGRATION_DIR / "V3__create_recommendation_dashboard.sql",
+            env_file,
+            env,
+            data_dir,
+        )
 
         loaded_tables = set(_database_counts(connection, env["DB_NAME"]))
         if loaded_tables != expected_tables:
