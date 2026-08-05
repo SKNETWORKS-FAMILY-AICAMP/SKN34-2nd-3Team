@@ -25,7 +25,7 @@ import aiohttp
 #
 # db/data/
 #   tag.csv, novel_tag.csv, novel_genre.csv, novel_author.csv,
-#   novel_group.csv, novel.csv, episode.csv, comment.csv,
+#   novel_group.csv, novel.csv, episode.csv, comment.csv(19컬럼),
 #   novel_statistics.csv, novel_ai_evaluation.csv
 #
 # 입력:
@@ -78,6 +78,55 @@ AUDIT_DIR = Path("db/audit")
 VALIDATION_DIR = AUDIT_DIR
 
 BLOCKING_HTTP_STATUSES = {403, 429}
+CSV_WRITER_OPTIONS = {
+    "delimiter": ",",
+    "quotechar": '"',
+    "quoting": csv.QUOTE_MINIMAL,
+    "lineterminator": "\n",
+}
+
+
+def normalize_csv_value(value: Any) -> Any:
+    """CSV로 기록되는 모든 문자열에서 실제 ASCII 큰따옴표를 제거한다.
+
+    이 함수는 테이블별 개별 컬럼이 아니라 CSV 기록 직전에 모든 문자열
+    컬럼에 공통 적용된다. 따라서 작품명, 회차명, 소개문, 작가명, 태그명,
+    댓글 본문, 댓글 작성자 정보, URL 및 감사 로그까지 모두 처리된다.
+    """
+    if not isinstance(value, str):
+        return value
+
+    normalized = (
+        value
+        .replace('"', "")
+        .replace("\r\n", "\n")
+        .replace("\r", "\n")
+    )
+
+    # 방어적 검증: 실제 데이터 안에 ASCII 큰따옴표가 남으면 즉시 실패시킨다.
+    if '"' in normalized:
+        raise ValueError(f"큰따옴표 제거 실패: {normalized[:200]!r}")
+
+    return normalized
+
+
+def normalize_csv_payload(value: Any) -> Any:
+    """중첩된 수집 결과 전체의 문자열 값을 CSV 저장 전에 정규화한다.
+
+    Streamlit 메인 페이지는 크롤러의 ERDCSVManager를 거치지 않고
+    CollectionService -> CsvCollectionRepository 경로로 결과를 저장한다.
+    따라서 반환 payload 자체도 정규화해야 두 실행 경로가 동일하게 동작한다.
+    dict 키와 숫자/불리언/None은 그대로 유지한다.
+    """
+    if isinstance(value, dict):
+        return {key: normalize_csv_payload(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [normalize_csv_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(normalize_csv_payload(item) for item in value)
+    return normalize_csv_value(value)
+
+
 SUCCESS_CODE = "M000_00000"
 RUN_VALIDATION_ON_FINISH = False
 
@@ -220,7 +269,9 @@ ERD_HEADERS: dict[str, list[str]] = {
         "comment_id", "novel_id", "episode_id", "parent_comment_id",
         "reply_level", "content_type", "comment_text", "like_count",
         "dislike_count", "created_at", "secret", "report_status",
-        "block_status", "collected_at",
+        "block_status", "collected_at", "commenter_nickname",
+        "commenter_blog_url", "is_novel_author",
+        "source_parent_comment_id",
     ],
     "novel_statistics": [
         "novel_id", "view_count", "preference_count", "like_count",
@@ -424,8 +475,8 @@ class ERDCSVManager:
     def _ensure_file(path: Path, headers: list[str]) -> None:
         if path.exists():
             return
-        with path.open("w", encoding="utf-8-sig", newline="") as f:
-            csv.writer(f).writerow(headers)
+        with path.open("w", encoding="utf-8", newline="") as f:
+            csv.writer(f, **CSV_WRITER_OPTIONS).writerow(headers)
 
     @staticmethod
     def _validate_header(path: Path, headers: list[str]) -> None:
@@ -606,7 +657,10 @@ class ERDCSVManager:
 
     @staticmethod
     def _filter(row: dict[str, Any], headers: list[str]) -> dict[str, Any]:
-        return {key: row.get(key, "") for key in headers}
+        return {
+            key: normalize_csv_value(row.get(key, ""))
+            for key in headers
+        }
 
     def _append(self, key: str, rows: list[dict[str, Any]]) -> None:
         if not rows:
@@ -616,8 +670,12 @@ class ERDCSVManager:
             else COMMENT_AUDIT_HEADERS if key == "comment_audit"
             else ALL_HEADERS[key]
         )
-        with self.files[key].open("a", encoding="utf-8-sig", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=headers)
+        with self.files[key].open("a", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=headers,
+                **CSV_WRITER_OPTIONS,
+            )
             writer.writerows(self._filter(row, headers) for row in rows)
 
     async def push_result(self, novel_id: int, data: dict[str, Any]) -> None:
@@ -657,24 +715,28 @@ class ERDCSVManager:
         headers = [
             "table_name", "column_name", "column_status", "note"
         ]
-        with path.open("w", encoding="utf-8-sig", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=headers)
+        with path.open("w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=headers,
+                **CSV_WRITER_OPTIONS,
+            )
             writer.writeheader()
             for table, erd_cols in ERD_HEADERS.items():
                 for col in erd_cols:
-                    writer.writerow({
+                    writer.writerow(self._filter({
                         "table_name": table,
                         "column_name": col,
                         "column_status": "ERD",
                         "note": "첨부 ERD 컬럼",
-                    })
+                    }, headers))
                 for col in EXTRA_HEADERS.get(table, []):
-                    writer.writerow({
+                    writer.writerow(self._filter({
                         "table_name": table,
                         "column_name": col,
                         "column_status": "EXTRA_ORIGINAL",
                         "note": "ERD에는 없으나 원본 보존을 위해 유지",
-                    })
+                    }, headers))
 
 
 class MunpiaCrawler:
@@ -1481,6 +1543,7 @@ class MunpiaCrawler:
                             declared_count=declared,
                             collected_at=collected_at,
                             referer=source_url,
+                            novel_author_url=author_url,
                         )
 
                         actual = len({
@@ -1588,9 +1651,8 @@ class MunpiaCrawler:
                             "num",
                             "",
                         ),
-                        "episode_title": chapter.get(
-                            "title",
-                            "",
+                        "episode_title": normalize_csv_value(
+                            chapter.get("title", "")
                         ),
                         "published_at": chapter.get(
                             "createdAt",
@@ -1748,6 +1810,7 @@ class MunpiaCrawler:
         declared_count: int,
         collected_at: str,
         referer: str,
+        novel_author_url: str,
     ) -> tuple[
         list[dict[str, Any]], str, int | str, str, str,
         int, str, str,
@@ -1757,16 +1820,33 @@ class MunpiaCrawler:
         last_code = ""
         last_message = ""
 
+        normalized_novel_author_url = self.manager.normalize_author_url(
+            novel_author_url
+        )
+
         def convert(comment: dict[str, Any], crawl_status: str) -> dict[str, Any] | None:
             comment_id = str(comment.get("id") or "").strip()
             if not comment_id:
                 return None
+
             parent_id = comment.get("parentId")
+            source_parent_id = (
+                "" if parent_id in (None, 0) else str(parent_id).strip()
+            )
+            commenter_blog_url = self.manager.normalize_author_url(
+                comment.get("blogUrl")
+            )
+            is_novel_author = bool(
+                normalized_novel_author_url
+                and commenter_blog_url
+                and normalized_novel_author_url == commenter_blog_url
+            )
+
             return {
                 "comment_id": comment_id,
                 "novel_id": novel_id,
                 "episode_id": episode_id,
-                "parent_comment_id": "" if parent_id in (None, 0) else parent_id,
+                "parent_comment_id": source_parent_id,
                 "reply_level": comment.get("replyLevel", ""),
                 "content_type": comment.get("contentType", ""),
                 "comment_text": comment.get("content", ""),
@@ -1777,8 +1857,33 @@ class MunpiaCrawler:
                 "report_status": comment.get("report", ""),
                 "block_status": comment.get("block", ""),
                 "collected_at": collected_at,
+                "commenter_nickname": str(
+                    comment.get("nickName") or ""
+                ).strip(),
+                "commenter_blog_url": commenter_blog_url,
+                "is_novel_author": is_novel_author,
+                "source_parent_comment_id": source_parent_id,
                 "crawl_status": crawl_status,
             }
+
+        def finalize_parent_links(
+            rows: list[dict[str, Any]],
+        ) -> list[dict[str, Any]]:
+            stored_ids = {
+                str(row.get("comment_id") or "").strip()
+                for row in rows
+                if str(row.get("comment_id") or "").strip()
+            }
+            for row in rows:
+                source_parent_id = str(
+                    row.get("source_parent_comment_id") or ""
+                ).strip()
+                row["parent_comment_id"] = (
+                    source_parent_id
+                    if source_parent_id in stored_ids
+                    else ""
+                )
+            return rows
 
         async def request_page(page: int) -> tuple[
             list[dict[str, Any]], int, str, str, int
@@ -1866,14 +1971,14 @@ class MunpiaCrawler:
                         else message.split(":", 1)[0]
                     )
                     return (
-                        list(rows_by_id.values()), status_name,
+                        finalize_parent_links(list(rows_by_id.values())), status_name,
                         last_http, last_code, last_message, total_pages,
                         "LATEST_TO_OLDEST", "",
                     )
                 await asyncio.sleep(0.1)
 
             return (
-                list(rows_by_id.values()), "SUCCESS",
+                finalize_parent_links(list(rows_by_id.values())), "SUCCESS",
                 last_http, last_code, last_message, total_pages,
                 "LATEST_TO_OLDEST", "",
             )
@@ -1937,7 +2042,7 @@ class MunpiaCrawler:
         )
 
         return (
-            ordered_rows, "PARTIAL_OLDEST_100",
+            finalize_parent_links(ordered_rows), "PARTIAL_OLDEST_100",
             last_http, last_code, last_message, total_pages,
             "OLDEST_TO_NEWER_THEN_RESTORED_LATEST_ORDER",
             "EXCESSIVE_COMMENT_PAGES",
@@ -2088,14 +2193,14 @@ def validate_outputs(data_dir: Path) -> dict[str, Any]:
                     "comment_crawl_status": row.get("comment_crawl_status", ""),
                 })
 
-    with duplicate_report.open("w", encoding="utf-8-sig", newline="") as f:
+    with duplicate_report.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(
             f, fieldnames=["table_name", "key_column", "duplicate_key"]
         )
         writer.writeheader()
         writer.writerows(dup_rows)
 
-    with orphan_report.open("w", encoding="utf-8-sig", newline="") as f:
+    with orphan_report.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(
             f,
             fieldnames=[
@@ -2106,7 +2211,7 @@ def validate_outputs(data_dir: Path) -> dict[str, Any]:
         writer.writeheader()
         writer.writerows(orphan_rows)
 
-    with comment_report.open("w", encoding="utf-8-sig", newline="") as f:
+    with comment_report.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(
             f,
             fieldnames=[
@@ -2226,4 +2331,5 @@ class MunpiaAsyncCrawler:
         # 기존 전체 크롤러의 단건 처리 경로를 그대로 사용한다.
         # session 인자는 기존 CollectionService 계약 호환용이다.
         del session
-        return await self._crawler.collect_one(novel_id)
+        result = await self._crawler.collect_one(novel_id)
+        return normalize_csv_payload(result)

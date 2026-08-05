@@ -165,8 +165,14 @@ CREATE TABLE comment (
     secret BOOLEAN,
     report_status VARCHAR(255),
     block_status BOOLEAN,
-    collected_at DATETIME,
+    collected_at DATETIME(6),
+    commenter_nickname VARCHAR(100) NOT NULL,
+    commenter_blog_url VARCHAR(512),
+    is_novel_author BOOLEAN NOT NULL DEFAULT FALSE,
+    source_parent_comment_id INT,
+    crawl_status VARCHAR(32) NOT NULL,
     PRIMARY KEY (comment_id),
+    INDEX idx_comment_source_parent (source_parent_comment_id),
     CONSTRAINT fk_comment_novel
         FOREIGN KEY (novel_id) REFERENCES novel (novel_id),
     CONSTRAINT fk_comment_episode
