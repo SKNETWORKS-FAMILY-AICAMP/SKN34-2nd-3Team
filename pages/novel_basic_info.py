@@ -15,20 +15,15 @@ from streamlit_extras.card_selector import card_selector
 from service.novel_service import NovelService
 from service.novel_prediction_service import NovelPredictionService 
 from service.novel_service_errors import NovelServiceError
-from repository.novel_repository import CsvNovelRepository
+from repository.repository import Repository
 
 def render_page():
     st.set_page_config(page_title="소설 기본정보 조회", layout="wide")
     st.title("📖 소설 상세정보 조회 시스템")
 
     try:
-        repository = CsvNovelRepository(
-            works_csv_path="./db/data/works.csv",
-            authors_csv_path="./db/data/authors.csv",
-            episodes_csv_path="./db/data/episodes.csv",
-            comments_csv_path="./db/data/comments.csv"
-        )
-    
+        repository = Repository()
+   
         service = NovelService(repository=repository)
         prediction_service = NovelPredictionService(repository=repository) 
     except Exception as e:

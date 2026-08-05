@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterator
 
 from clawler.munpia_crawler import MunpiaAsyncCrawler
-from repository.collection_repository import CollectionRepository
+from repository.repository import Repository
 from service.novel_service import NovelService
 from service.novel_service_errors import (
     CollectionApiError,
@@ -41,7 +41,7 @@ class CollectionProgress:
 class CollectionService:
     def __init__(
         self,
-        repository: CollectionRepository,
+        repository: Repository,
         *,
         crawler_factory: Callable[[], MunpiaAsyncCrawler] | None = None,
     ) -> None:
@@ -130,7 +130,7 @@ class CollectionService:
         yield CollectionProgress(
             event="COMPLETE",
             novel_id=novel_id,
-            message="CSV 반영까지 완료했습니다.",
+            message="DB 저장까지 완료했습니다.",
             elapsed_seconds=time.monotonic() - started,
             phase="COMPLETE",
             result=result,

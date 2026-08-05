@@ -1,59 +1,64 @@
 from __future__ import annotations
 
-import csv
+import pytest
 
-from repository.collection_repository import CsvCollectionRepository
-from tests.conftest import write_table
-
-
-def read_rows(path):
-    with path.open("r", encoding="utf-8-sig", newline="") as file:
-        return list(csv.DictReader(file))
+from repository.repository import Repository
 
 
-def result(novel_id: int, title: str):
+class RecordingCursor:
+    def __init__(self) -> None:
+        self.executed: list[tuple[str, tuple]] = []
+
+    def execute(self, query, params=()):
+        self.executed.append((" ".join(query.split()), tuple(params)))
+
+    def close(self):
+        pass
+
+
+class RecordingConnection:
+    def __init__(self) -> None:
+        self.cursor_instance = RecordingCursor()
+        self.committed = False
+        self.rolled_back = False
+
+    def cursor(self, **kwargs):
+        return self.cursor_instance
+
+    def commit(self):
+        self.committed = True
+
+    def rollback(self):
+        self.rolled_back = True
+
+
+def result(novel_id: int):
     return {
         "novel_author": [{"author_id": 1, "author_name": "작가"}],
         "novel_group": [], "novel_genre": [], "tag": [], "novel_tag": [],
-        "novel": {"novel_id": novel_id, "title": title, "author_id": 1},
+        "novel": {"novel_id": novel_id, "title": "작품", "author_id": 1},
         "novel_statistics": {"novel_id": novel_id, "view_count": 10},
-        "episode": [{"episode_id": novel_id * 10, "novel_id": novel_id, "episode_number": 1}],
+        "episode": [{"episode_id": 11, "novel_id": novel_id, "episode_number": 1}],
         "comment": [],
     }
 
 
-def test_insert_and_update(data_dir):
-    repo = CsvCollectionRepository(data_dir)
-    assert repo.novel_exists(1) is False
-    repo.save_result(1, result(1, "첫 제목"))
-    assert repo.novel_exists(1) is True
-    repo.save_result(1, result(1, "새 제목"))
-    rows = read_rows(data_dir / "novel.csv")
-    assert len(rows) == 1
-    assert rows[0]["title"] == "새 제목"
+def test_save_result_uses_one_db_transaction(monkeypatch):
+    connection = RecordingConnection()
+    repository = Repository()
+    monkeypatch.setattr(repository, "get_connection", lambda: connection)
+
+    changed = repository.save_result(1, result(1))
+
+    assert connection.committed is True
+    assert connection.rolled_back is False
+    assert changed["novel"] == 1
+    queries = [query for query, _ in connection.cursor_instance.executed]
+    assert any("INSERT INTO `novel`" in query for query in queries)
+    assert any("DELETE FROM episode" in query for query in queries)
+    assert any("INSERT INTO `episode`" in query for query in queries)
 
 
-def test_update_preserves_other_novel(data_dir):
-    repo = CsvCollectionRepository(data_dir)
-    repo.save_result(1, result(1, "A"))
-    repo.save_result(2, result(2, "B"))
-    repo.save_result(1, result(1, "A2"))
-    rows = read_rows(data_dir / "novel.csv")
-    assert {row["novel_id"]: row["title"] for row in rows} == {"1": "A2", "2": "B"}
-
-
-def test_ai_evaluation_is_untouched(data_dir):
-    write_table(data_dir, "novel_ai_evaluation", [{"evaluation_id": 7, "novel_id": 1}])
-    before = (data_dir / "novel_ai_evaluation.csv").read_bytes()
-    CsvCollectionRepository(data_dir).save_result(1, result(1, "A"))
-    assert (data_dir / "novel_ai_evaluation.csv").read_bytes() == before
-
-
-def test_list_and_find_page(data_dir):
-    repo = CsvCollectionRepository(data_dir)
-    for novel_id in range(1, 26):
-        repo.save_result(novel_id, result(novel_id, f"작품 {novel_id}"))
-    rows, total = repo.list_novels(2, 20)
-    assert total == 25
-    assert [row["novel_id"] for row in rows] == [str(i) for i in range(21, 26)]
-    assert repo.find_page(21, 20) == 2
+def test_save_result_rejects_mismatched_novel_id():
+    with pytest.raises(ValueError, match="novel_id"):
+        Repository().save_result(1, result(2))

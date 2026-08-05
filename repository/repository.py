@@ -138,6 +138,182 @@ class Repository:
             rows = cursor.fetchall()
         return [self._row_to_novel(row) for row in rows]
 
+    def novel_exists(self, novel_id: int) -> bool:
+        with self._cursor() as cursor:
+            cursor.execute("SELECT 1 FROM novel WHERE novel_id = %s", (novel_id,))
+            return cursor.fetchone() is not None
+
+    def list_novels(
+        self, page: int, page_size: int
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Return one DB-backed page for the collection screen."""
+        if page_size <= 0:
+            raise ValueError("page_size must be greater than zero")
+        page = max(1, int(page))
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute("SELECT COUNT(*) AS total FROM novel")
+            total = int(cursor.fetchone()["total"])
+            cursor.execute(
+                """
+                SELECT n.novel_id, n.title, COALESCE(a.author_name, '') AS author_name,
+                       n.free, n.paid_serial, n.finish, s.view_count,
+                       s.preference_count, s.chapter_count, n.collected_at
+                FROM novel AS n
+                LEFT JOIN novel_author AS a ON a.author_id = n.author_id
+                LEFT JOIN novel_statistics AS s ON s.novel_id = n.novel_id
+                ORDER BY n.novel_id
+                LIMIT %s OFFSET %s
+                """,
+                (page_size, (page - 1) * page_size),
+            )
+            rows = cursor.fetchall()
+        return rows, total
+
+    def find_page(self, novel_id: int, page_size: int) -> int:
+        if page_size <= 0:
+            raise ValueError("page_size must be greater than zero")
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) AS preceding FROM novel WHERE novel_id < %s",
+                (novel_id,),
+            )
+            preceding = int(cursor.fetchone()["preceding"])
+        return preceding // page_size + 1
+
+    def get_episode_statistics(self) -> list[dict[str, Any]]:
+        """Return episode data used to calculate global prediction rates."""
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                SELECT novel_id, episode_number, view_count, access_type
+                FROM episode
+                WHERE view_count IS NOT NULL AND access_type IS NOT NULL
+                ORDER BY novel_id, episode_number
+                """
+            )
+            return cursor.fetchall()
+
+    def save_result(self, novel_id: int, result: dict[str, Any]) -> dict[str, int]:
+        """Atomically upsert a crawler result directly into MySQL."""
+        novel_data = result.get("novel")
+        if not isinstance(novel_data, dict):
+            raise ValueError("crawler result does not contain novel data")
+        if int(novel_data.get("novel_id", novel_id)) != novel_id:
+            raise ValueError("crawler result novel_id does not match")
+
+        changed = {
+            table: len(value) if isinstance(value, list) else int(bool(value))
+            for table, value in result.items()
+            if table in self._TABLE_COLUMNS
+        }
+        connection = self.get_connection()
+        cursor = connection.cursor()
+        try:
+            for table in ("novel_author", "novel_group", "novel_genre", "tag"):
+                self._upsert_raw_rows(cursor, table, self._as_rows(result.get(table)))
+            self._upsert_raw_rows(cursor, "novel", [novel_data])
+
+            cursor.execute("DELETE FROM comment WHERE novel_id = %s", (novel_id,))
+            cursor.execute("DELETE FROM episode WHERE novel_id = %s", (novel_id,))
+            cursor.execute("DELETE FROM novel_statistics WHERE novel_id = %s", (novel_id,))
+            cursor.execute("DELETE FROM novel_tag WHERE novel_id = %s", (novel_id,))
+
+            for table in ("novel_tag", "novel_statistics", "episode"):
+                self._upsert_raw_rows(cursor, table, self._as_rows(result.get(table)))
+
+            comments = self._as_rows(result.get("comment"))
+            parent_ids = {row.get("comment_id") for row in comments}
+            self._upsert_raw_rows(
+                cursor,
+                "comment",
+                [dict(row, parent_comment_id=None) for row in comments],
+            )
+            for row in comments:
+                parent_id = row.get("parent_comment_id")
+                if parent_id not in (None, "") and parent_id in parent_ids:
+                    cursor.execute(
+                        "UPDATE comment SET parent_comment_id = %s WHERE comment_id = %s",
+                        (parent_id, row.get("comment_id")),
+                    )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+        return changed
+
+    _TABLE_COLUMNS: dict[str, tuple[str, ...]] = {
+        "tag": ("tag_id", "tag_name"),
+        "novel_genre": ("genre_id", "genre_name"),
+        "novel_author": ("author_id", "author_name", "author_url", "is_illustrator"),
+        "novel_group": ("novel_group_id", "group_name"),
+        "novel": (
+            "novel_id", "source_url", "title", "introduction", "author_id",
+            "illustrator_id", "origin_cover_url", "group_id", "free", "paid_serial",
+            "exclusive", "pre_exclusive", "adult", "contest", "rental", "pause",
+            "finish", "epub", "ebook", "cp_novel", "created_at", "updated_at",
+            "paid_conversion_open_at", "isbn", "period", "unit_type", "collected_at",
+            "genre_1", "genre_2",
+        ),
+        "novel_tag": ("novel_id", "tag_id"),
+        "episode": (
+            "episode_id", "novel_id", "episode_number", "episode_title", "published_at",
+            "access_type", "view_count", "like_count", "comment_count", "page_count",
+            "adult", "paid_conversion_before_entry", "up", "collected_at",
+        ),
+        "novel_statistics": (
+            "novel_id", "view_count", "preference_count", "like_count", "chapter_count",
+            "free_chapter_count", "characters", "male_count", "female_count",
+            "age_10s_percent", "age_20s_percent", "age_30s_percent", "age_40s_percent",
+            "age_50s_percent", "source_notice_count", "collected_at",
+        ),
+        "comment": (
+            "comment_id", "novel_id", "episode_id", "parent_comment_id", "reply_level",
+            "content_type", "comment_text", "like_count", "dislike_count", "created_at",
+            "secret", "report_status", "block_status", "collected_at",
+        ),
+    }
+    _PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
+        "tag": ("tag_id",), "novel_genre": ("genre_id",),
+        "novel_author": ("author_id",), "novel_group": ("novel_group_id",),
+        "novel": ("novel_id",), "novel_tag": ("novel_id", "tag_id"),
+        "episode": ("episode_id",), "novel_statistics": ("novel_id",),
+        "comment": ("comment_id",),
+    }
+
+    @staticmethod
+    def _as_rows(value: Any) -> list[dict[str, Any]]:
+        if isinstance(value, dict):
+            return [value]
+        if isinstance(value, list):
+            return [row for row in value if isinstance(row, dict)]
+        return []
+
+    def _upsert_raw_rows(
+        self, cursor: Any, table: str, rows: Sequence[dict[str, Any]]
+    ) -> None:
+        columns = self._TABLE_COLUMNS[table]
+        primary_keys = self._PRIMARY_KEYS[table]
+        quoted = ", ".join(f"`{column}`" for column in columns)
+        placeholders = ", ".join(["%s"] * len(columns))
+        update_columns = [column for column in columns if column not in primary_keys]
+        if update_columns:
+            assignments = ", ".join(
+                f"`{column}` = new.`{column}`" for column in update_columns
+            )
+        else:
+            assignments = "`novel_id` = new.`novel_id`"
+        query = (
+            f"INSERT INTO `{table}` ({quoted}) VALUES ({placeholders}) AS new "
+            f"ON DUPLICATE KEY UPDATE {assignments}"
+        )
+        for row in rows:
+            cursor.execute(
+                query,
+                tuple(None if row.get(column) == "" else row.get(column) for column in columns),
+            )
+
     def save_collection(
         self,
         novel: Novel,
