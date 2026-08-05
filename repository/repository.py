@@ -144,6 +144,21 @@ class Repository:
             rows = cursor.fetchall()
         return [self._row_to_comment(row) for row in rows]
 
+    def get_primary_genre_name(self, novel_id: int) -> str | None:
+        """Return the name of a novel's primary genre."""
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                SELECT g.genre_name
+                FROM novel AS n
+                JOIN novel_genre AS g ON g.genre_id = n.genre_1
+                WHERE n.novel_id = %s
+                """,
+                (novel_id,),
+            )
+            row = cursor.fetchone()
+        return row["genre_name"] if row else None
+
     def find_free_novels(self, *, limit: int | None = None) -> list[Novel]:
         """Return free, non-paid, unfinished novels from the current DB state."""
         query = (

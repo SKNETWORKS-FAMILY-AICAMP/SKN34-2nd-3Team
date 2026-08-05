@@ -1,5 +1,7 @@
 from __future__ import annotations
 import pandas as pd
+import os
+import joblib
 from typing import Tuple
 
 from repository.repository import Repository
@@ -59,7 +61,70 @@ class NovelPredictionService:
             print(f"통계 계산 중 예외 발생: {e}")
             return 60.0, 0.95
 
-    def get_prediction_data(self, novel_id: int) -> tuple[pd.DataFrame, float] | None:
+    def _predict_drop_rate_with_ml(self, novel_id: int) -> float | None:
+        try:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            model_path = os.path.join(base_dir, "../research/model/drop_rate_rf_model.pkl")
+            scaler_path = os.path.join(base_dir, "../research/model/drop_rate_scaler.pkl")
+            
+            if not os.path.exists(model_path) or not os.path.exists(scaler_path):
+                print(f"⚠️ [ML Fallback] 머신러닝 모델 파일이 없습니다: {model_path}")
+                return None
+                
+            rf_model = joblib.load(model_path)
+            scaler = joblib.load(scaler_path)
+            
+            novel = self.repository.get_novel(novel_id)
+            episodes = self.repository.get_episodes(novel_id)
+            if not novel or not episodes:
+                return None
+                
+            last_ep = episodes[-1]
+            
+            expected_features = getattr(scaler, "feature_names_in_", None)
+            if expected_features is None:
+                print("⚠️ [ML Fallback] 모델에서 기대 피처 정보를 읽을 수 없습니다.")
+                return None
+                
+            input_df = pd.DataFrame(0.0, index=[0], columns=expected_features)
+            
+            input_df.at[0, 'episode_number_free'] = getattr(last_ep, 'episode_number', 0)
+            input_df.at[0, 'page_count_free'] = getattr(last_ep, 'page_count', 0)
+            input_df.at[0, 'view_count_free'] = getattr(last_ep, 'view_count', 0)
+            input_df.at[0, 'like_count_free'] = getattr(last_ep, 'like_count', 0)
+            input_df.at[0, 'comment_count_free'] = getattr(last_ep, 'comment_count', 0)
+            
+            genre = self.repository.get_primary_genre_name(novel_id)
+            if f'genre_best_name_{genre}' in input_df.columns:
+                input_df.at[0, f'genre_best_name_{genre}'] = 1.0
+            elif 'genre_best_name_other_genre' in input_df.columns:
+                input_df.at[0, 'genre_best_name_other_genre'] = 1.0
+                
+            adult = getattr(novel, 'adult', False)
+            if adult and 'adult_True' in input_df.columns:
+                input_df.at[0, 'adult_True'] = 1.0
+                
+            exclusive = getattr(novel, 'exclusive', False)
+            if exclusive and 'exclusive_True' in input_df.columns:
+                input_df.at[0, 'exclusive_True'] = 1.0
+                
+            contest = getattr(novel, 'contest', False)
+            if contest and 'contest_True' in input_df.columns:
+                input_df.at[0, 'contest_True'] = 1.0
+
+            input_scaled = scaler.transform(input_df)
+            pred_drop_rate = rf_model.predict(input_scaled)[0]
+            
+            final_rate = round(float(pred_drop_rate) * 100, 1)
+            final_rate = max(0.0, min(100.0, final_rate))
+            
+            return final_rate
+            
+        except Exception as e:
+            print(f"⚠️ [ML Fallback] ML 예측 중 예외 발생: {e}")
+            return None
+
+    def get_prediction_data(self, novel_id: int, is_ml: bool = False) -> tuple[pd.DataFrame, float] | None:
         novel = self.repository.get_novel(novel_id)
         if not novel: return None
 
@@ -82,6 +147,13 @@ class NovelPredictionService:
         if novel.free:
             predicted_label = "예상 조회수 (유료 전환 시)"
             drop_rate = db_drop_rate 
+            
+            if is_ml:
+                ml_rate = self._predict_drop_rate_with_ml(novel_id)
+
+                if ml_rate is not None:
+                    drop_rate = ml_rate
+                    
             predicted_view = last_view_count * (1 - (drop_rate / 100))
             decay_rate = db_decay_rate
         else:
