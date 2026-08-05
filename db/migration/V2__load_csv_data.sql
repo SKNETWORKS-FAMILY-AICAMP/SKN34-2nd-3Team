@@ -4,7 +4,7 @@ LOAD DATA INFILE '/var/lib/mysql-files/tag.csv'
 INTO TABLE tag
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"' ESCAPED BY ''
-LINES TERMINATED BY '\r\n'
+LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (@tag_id, @tag_name, @first_seen_novel_id, @source_collected_at)
 SET tag_id = NULLIF(@tag_id, ''),
@@ -14,7 +14,7 @@ LOAD DATA INFILE '/var/lib/mysql-files/novel_genre.csv'
 INTO TABLE novel_genre
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"' ESCAPED BY ''
-LINES TERMINATED BY '\r\n'
+LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (@genre_id, @genre_name, @genre_best_code, @genre_best_name,
  @first_seen_novel_id, @source_collected_at)
@@ -25,7 +25,7 @@ LOAD DATA INFILE '/var/lib/mysql-files/novel_author.csv'
 INTO TABLE novel_author
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"' ESCAPED BY ''
-LINES TERMINATED BY '\r\n'
+LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (@author_id, @author_name, @author_url, @is_illustrator)
 SET author_id = NULLIF(@author_id, ''),
@@ -38,7 +38,7 @@ LOAD DATA INFILE '/var/lib/mysql-files/novel_group.csv'
 INTO TABLE novel_group
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"' ESCAPED BY ''
-LINES TERMINATED BY '\r\n'
+LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (@novel_group_id, @group_name, @first_seen_novel_id, @source_collected_at)
 SET novel_group_id = NULLIF(@novel_group_id, ''),
@@ -48,7 +48,7 @@ LOAD DATA INFILE '/var/lib/mysql-files/novel.csv'
 INTO TABLE novel
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"' ESCAPED BY ''
-LINES TERMINATED BY '\r\n'
+LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (@novel_id, @source_url, @title, @introduction, @author_id, @illustrator_id,
  @origin_cover_url, @group_id, @free, @paid_serial, @exclusive, @pre_exclusive,
@@ -91,7 +91,7 @@ LOAD DATA INFILE '/var/lib/mysql-files/novel_tag.csv'
 INTO TABLE novel_tag
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"' ESCAPED BY ''
-LINES TERMINATED BY '\r\n'
+LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (@novel_id, @tag_id, @source_collected_at)
 SET novel_id = NULLIF(@novel_id, ''),
@@ -101,7 +101,7 @@ LOAD DATA INFILE '/var/lib/mysql-files/episode.csv'
 INTO TABLE episode
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"' ESCAPED BY ''
-LINES TERMINATED BY '\r\n'
+LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (@episode_id, @novel_id, @episode_number, @episode_title, @published_at,
  @access_type, @view_count, @like_count, @comment_count, @page_count, @adult,
@@ -126,7 +126,7 @@ LOAD DATA INFILE '/var/lib/mysql-files/novel_statistics.csv'
 INTO TABLE novel_statistics
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"' ESCAPED BY ''
-LINES TERMINATED BY '\r\n'
+LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (@novel_id, @view_count, @preference_count, @like_count, @chapter_count,
  @free_chapter_count, @characters, @male_count, @female_count, @age_10s_percent,
@@ -153,7 +153,7 @@ LOAD DATA INFILE '/var/lib/mysql-files/novel_ai_evaluation.csv'
 INTO TABLE novel_ai_evaluation
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"' ESCAPED BY ''
-LINES TERMINATED BY '\r\n'
+LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (@evaluation_id, @novel_id, @evaluation_type, @evaluation_level,
  @evaluation_score, @confidence, @model_version, @analyzed_at)
@@ -180,7 +180,12 @@ CREATE TABLE comment_import (
     secret BOOLEAN,
     report_status VARCHAR(255),
     block_status BOOLEAN,
-    collected_at DATETIME,
+    collected_at DATETIME(6),
+    commenter_nickname VARCHAR(100) NOT NULL,
+    commenter_blog_url VARCHAR(512),
+    is_novel_author BOOLEAN NOT NULL DEFAULT FALSE,
+    source_parent_comment_id INT,
+    crawl_status VARCHAR(32) NOT NULL,
     PRIMARY KEY (comment_id)
 ) ENGINE = InnoDB
   DEFAULT CHARACTER SET = utf8mb4
@@ -190,11 +195,13 @@ LOAD DATA INFILE '/var/lib/mysql-files/comment.csv'
 INTO TABLE comment_import
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"' ESCAPED BY ''
-LINES TERMINATED BY '\r\n'
+LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (@comment_id, @novel_id, @episode_id, @parent_comment_id, @reply_level,
  @content_type, @comment_text, @like_count, @dislike_count, @created_at,
- @secret, @report_status, @block_status, @collected_at, @crawl_status)
+ @secret, @report_status, @block_status, @collected_at,
+ @commenter_nickname, @commenter_blog_url, @is_novel_author,
+ @source_parent_comment_id, @crawl_status)
 SET comment_id = NULLIF(@comment_id, ''),
     novel_id = NULLIF(@novel_id, ''),
     episode_id = NULLIF(@episode_id, ''),
@@ -208,11 +215,17 @@ SET comment_id = NULLIF(@comment_id, ''),
     secret = CASE LOWER(TRIM(@secret)) WHEN 'true' THEN 1 WHEN 'false' THEN 0 ELSE NULL END,
     report_status = NULLIF(@report_status, ''),
     block_status = CASE LOWER(TRIM(@block_status)) WHEN 'true' THEN 1 WHEN 'false' THEN 0 ELSE NULL END,
-    collected_at = STR_TO_DATE(NULLIF(SUBSTRING(@collected_at, 1, 19), ''), '%Y-%m-%dT%H:%i:%s');
+    collected_at = STR_TO_DATE(NULLIF(SUBSTRING(@collected_at, 1, 26), ''), '%Y-%m-%dT%H:%i:%s.%f'),
+    commenter_nickname = COALESCE(NULLIF(@commenter_nickname, ''), ''),
+    commenter_blog_url = NULLIF(@commenter_blog_url, ''),
+    is_novel_author = CASE LOWER(TRIM(@is_novel_author)) WHEN 'true' THEN 1 WHEN 'false' THEN 0 ELSE 0 END,
+    source_parent_comment_id = NULLIF(@source_parent_comment_id, ''),
+    crawl_status = COALESCE(NULLIF(@crawl_status, ''), 'UNKNOWN');
 INSERT INTO comment (
     comment_id, novel_id, episode_id, parent_comment_id, reply_level,
     content_type, comment_text, like_count, dislike_count, created_at,
-    secret, report_status, block_status, collected_at
+    secret, report_status, block_status, collected_at, commenter_nickname,
+    commenter_blog_url, is_novel_author, source_parent_comment_id, crawl_status
 )
 SELECT imported.comment_id,
        CASE WHEN novel.novel_id IS NULL THEN NULL ELSE imported.novel_id END,
@@ -225,7 +238,9 @@ SELECT imported.comment_id,
        imported.reply_level, imported.content_type, imported.comment_text,
        imported.like_count, imported.dislike_count, imported.created_at,
        imported.secret, imported.report_status, imported.block_status,
-       imported.collected_at
+       imported.collected_at, imported.commenter_nickname,
+       imported.commenter_blog_url, imported.is_novel_author,
+       imported.source_parent_comment_id, imported.crawl_status
 FROM comment_import AS imported
 LEFT JOIN novel ON novel.novel_id = imported.novel_id
 LEFT JOIN episode ON episode.episode_id = imported.episode_id
