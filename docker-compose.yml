@@ -16,7 +16,6 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
       - ${DB_DATA_DIR:-./db/data}:/var/lib/mysql-files
-      - ./db/migration:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${DB_PASSWORD} --silent"]
       interval: 5s

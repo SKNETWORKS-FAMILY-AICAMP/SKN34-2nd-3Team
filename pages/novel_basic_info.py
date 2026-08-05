@@ -19,7 +19,7 @@ from service.novel_service_errors import NovelServiceError
 from repository.repository import Repository
 
 def render_page():
-    st.set_page_config(page_title="소설 상세정보 조회 시스템", layout="wide")
+    st.set_page_config(page_title="소설 기본정보 조회", layout="wide")
     st.title("📖 소설 상세정보 조회 시스템")
 
     try:
@@ -39,11 +39,24 @@ def render_page():
     def search_novel(searchterm: str):
         if not searchterm:
             return []
-        return [searchterm]
+        try:
+            rows, _ = repository.list_novels(page=1, page_size=100)
+            suggestions = []
+            for row in rows:
+                novel_id = str(row.get("novel_id", ""))
+                title = str(row.get("title", ""))
+                
+                if searchterm.lower() in novel_id.lower() or searchterm.lower() in title.lower():
+                    display_text = f"[{novel_id}] {title}"
+                    suggestions.append((display_text, novel_id))
+                    
+            return suggestions[:10]
+        except Exception:
+            return [searchterm]
 
     selected_value = st_searchbox(
         search_novel,
-        placeholder="🔍 조회할 소설 ID 또는 작품 URL을 입력하고 Enter를 누르세요...",
+        placeholder="🔍 조회할 소설 ID 또는 작품 타이틀을 입력하세요...",
         key="novel_searchbox",
         clear_on_submit=False
     )
