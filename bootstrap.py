@@ -57,6 +57,22 @@ def _invalid_dataset_files(data_dir: Path) -> list[str]:
     return invalid_files
 
 
+def _csv_data_presence(data_dir: Path) -> dict[str, bool]:
+    presence: dict[str, bool] = {}
+    for table in ALL_HEADERS:
+        path = data_dir / f"{table}.csv"
+        try:
+            with path.open("r", encoding="utf-8-sig", newline="") as file:
+                reader = csv.reader(file)
+                next(reader, None)
+                presence[table] = next(reader, None) is not None
+        except (OSError, UnicodeError, csv.Error) as error:
+            raise BootstrapError(
+                f"failed to inspect CSV data rows in {path}: {error}"
+            ) from error
+    return presence
+
+
 def _read_revision(data_dir: Path) -> str | None:
     try:
         revision = (data_dir / DATASET_REVISION_FILE).read_text(
@@ -293,15 +309,44 @@ def _database_counts(connection, database: str) -> dict[str, int]:
     cursor = connection.cursor()
     try:
         cursor.execute(
-            "SELECT table_name, table_rows FROM information_schema.tables "
+            "SELECT table_name FROM information_schema.tables "
             f"WHERE table_schema = %s AND table_name IN ({placeholders})",
             (database, *expected_tables),
         )
-        return {str(table): int(rows or 0) for table, rows in cursor.fetchall()}
+        tables = [str(row[0]) for row in cursor.fetchall()]
+        counts: dict[str, int] = {}
+        for table in tables:
+            cursor.execute(
+                f"SELECT EXISTS(SELECT 1 FROM `{table}` LIMIT 1)"
+            )
+            counts[table] = int(cursor.fetchone()[0])
+        return counts
     finally:
         close = getattr(cursor, "close", None)
         if close is not None:
             close()
+
+
+def _validate_database_contents(
+    counts: Mapping[str, int],
+    source_presence: Mapping[str, bool],
+) -> None:
+    errors: list[str] = []
+    for table in ALL_HEADERS:
+        source_has_rows = source_presence[table]
+        database_has_rows = counts.get(table, 0) > 0
+        if source_has_rows and not database_has_rows:
+            errors.append(
+                f"{table}.csv has data rows but table {table} is empty"
+            )
+        elif not source_has_rows and database_has_rows:
+            errors.append(
+                f"{table}.csv is header-only but table {table} has rows"
+            )
+    if errors:
+        raise BootstrapError(
+            "database CSV row validation failed: " + "; ".join(errors)
+        )
 
 
 def _execute_migration(
@@ -347,6 +392,7 @@ def initialize_database(
             "database initialization requires valid CSV files: "
             + ", ".join(invalid_files)
         )
+    source_presence = _csv_data_presence(data_dir)
 
     connection = _connect(env)
     cursor = connection.cursor()
@@ -362,7 +408,8 @@ def initialize_database(
         existing_tables = set(counts)
 
         if existing_tables == expected_tables:
-            print("Database schema already exists; migrations skipped")
+            _validate_database_contents(counts, source_presence)
+            print("Database schema and CSV data already exist; migrations skipped")
             return
         if existing_tables:
             missing = sorted(expected_tables - existing_tables)
@@ -390,13 +437,15 @@ def initialize_database(
             data_dir,
         )
 
-        loaded_tables = set(_database_counts(connection, env["DB_NAME"]))
+        loaded_counts = _database_counts(connection, env["DB_NAME"])
+        loaded_tables = set(loaded_counts)
         if loaded_tables != expected_tables:
             missing = sorted(expected_tables - loaded_tables)
             raise BootstrapError(
                 "database migrations completed without all expected tables: "
                 + ", ".join(missing)
             )
+        _validate_database_contents(loaded_counts, source_presence)
         print("Database schema and CSV data are ready")
     finally:
         if lock_acquired:
