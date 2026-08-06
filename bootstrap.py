@@ -30,6 +30,22 @@ DATASET_REVISION_FILE = ".hf_dataset_revision"
 MYSQL_SERVICE = "mysql"
 MYSQL_LOCK_NAME = "skn34_bootstrap_database"
 
+COMMENT_AI_FILENAME = "comment_ai_evaluation.csv"
+COMMENT_AI_HEADER = [
+    "comment_id",
+    "novel_id",
+    "episode_id",
+    "predicted_label",
+    "negative_score",
+    "neutral_score",
+    "positive_score",
+    "confidence",
+    "model_version",
+    "comment_text_hash",
+    "analyzed_at",
+]
+COMMENT_STATISTICS_TABLE = "comment_statistics"
+
 _DATASET_LOCK = threading.Lock()
 
 
@@ -38,7 +54,10 @@ class BootstrapError(RuntimeError):
 
 
 def _required_csv_files() -> list[str]:
-    return [f"{table}.csv" for table in ALL_HEADERS]
+    return [
+        *[f"{table}.csv" for table in ALL_HEADERS],
+        COMMENT_AI_FILENAME,
+    ]
 
 
 def _invalid_dataset_files(data_dir: Path) -> list[str]:
@@ -56,6 +75,26 @@ def _invalid_dataset_files(data_dir: Path) -> list[str]:
                 invalid_files.append(filename)
         except (OSError, UnicodeError, csv.Error):
             invalid_files.append(filename)
+
+    comment_ai_path = data_dir / COMMENT_AI_FILENAME
+    try:
+        if (
+            not comment_ai_path.is_file()
+            or comment_ai_path.stat().st_size == 0
+        ):
+            invalid_files.append(COMMENT_AI_FILENAME)
+        else:
+            with comment_ai_path.open(
+                "r",
+                encoding="utf-8-sig",
+                newline="",
+            ) as file:
+                header = next(csv.reader(file), None)
+            if header != COMMENT_AI_HEADER:
+                invalid_files.append(COMMENT_AI_FILENAME)
+    except (OSError, UnicodeError, csv.Error):
+        invalid_files.append(COMMENT_AI_FILENAME)
+
     return invalid_files
 
 
@@ -384,6 +423,95 @@ def _execute_migration(
     _run(command, env=runtime, input_text=sql)
 
 
+
+def _table_exists(
+    connection,
+    database: str,
+    table_name: str,
+) -> bool:
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT EXISTS(
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = %s
+                  AND table_name = %s
+            )
+            """,
+            (database, table_name),
+        )
+        return bool(cursor.fetchone()[0])
+    finally:
+        cursor.close()
+
+
+def _table_row_count(connection, table_name: str) -> int:
+    cursor = connection.cursor()
+    try:
+        cursor.execute(f"SELECT COUNT(*) FROM `{table_name}`")
+        return int(cursor.fetchone()[0])
+    finally:
+        cursor.close()
+
+
+def _ensure_comment_statistics(
+    connection,
+    env_file: Path,
+    env: Mapping[str, str],
+    data_dir: Path,
+) -> None:
+    if _table_exists(
+        connection,
+        env["DB_NAME"],
+        COMMENT_STATISTICS_TABLE,
+    ):
+        row_count = _table_row_count(
+            connection,
+            COMMENT_STATISTICS_TABLE,
+        )
+        if row_count <= 0:
+            raise BootstrapError(
+                "comment_statistics exists but contains no rows"
+            )
+        print(
+            "Comment sentiment data already exist; "
+            f"V5 skipped ({row_count:,} rows)"
+        )
+        return
+
+    print("Applying V5__create_comment_statistics.sql")
+    _execute_migration(
+        MIGRATION_DIR / "V5__create_comment_statistics.sql",
+        env_file,
+        env,
+        data_dir,
+    )
+
+    if not _table_exists(
+        connection,
+        env["DB_NAME"],
+        COMMENT_STATISTICS_TABLE,
+    ):
+        raise BootstrapError(
+            "V5 completed without creating comment_statistics"
+        )
+
+    row_count = _table_row_count(
+        connection,
+        COMMENT_STATISTICS_TABLE,
+    )
+    if row_count <= 0:
+        raise BootstrapError(
+            "V5 created comment_statistics but loaded zero rows"
+        )
+
+    print(
+        "Comment sentiment schema and CSV data are ready: "
+        f"{row_count:,} rows"
+    )
+
 def initialize_database(
     env_file: Path,
     env: Mapping[str, str],
@@ -412,7 +540,17 @@ def initialize_database(
 
         if existing_tables == expected_tables:
             _validate_database_contents(counts, source_presence)
-            print("Database schema and CSV data already exist; migrations skipped")
+            print("Core database schema and CSV data already exist")
+            _ensure_comment_statistics(
+                connection,
+                env_file,
+                env,
+                data_dir,
+            )
+            print(
+                "Database schema, core CSV data, "
+                "and comment sentiment data are ready"
+            )
             return
         if existing_tables:
             missing = sorted(expected_tables - existing_tables)
@@ -445,6 +583,12 @@ def initialize_database(
             env,
             data_dir,
         )
+        _ensure_comment_statistics(
+            connection,
+            env_file,
+            env,
+            data_dir,
+        )
 
         loaded_counts = _database_counts(connection, env["DB_NAME"])
         loaded_tables = set(loaded_counts)
@@ -455,7 +599,10 @@ def initialize_database(
                 + ", ".join(missing)
             )
         _validate_database_contents(loaded_counts, source_presence)
-        print("Database schema and CSV data are ready")
+        print(
+            "Database schema, core CSV data, "
+            "and comment sentiment data are ready"
+        )
     finally:
         if lock_acquired:
             try:
