@@ -1,3 +1,5 @@
+from typing import get_type_hints
+
 from service.recommendation_service import RecommendationService
 
 
@@ -37,3 +39,12 @@ def test_ranked_novels_rejects_non_positive_limit():
         assert str(exc) == "limit must be greater than zero"
     else:
         raise AssertionError("ValueError was not raised")
+
+
+def test_ranked_novels_passes_none_for_all_genres():
+    repository = StubRepository([])
+
+    RecommendationService(repository).get_ranked_novels(None)
+
+    assert repository.calls == [None]
+    assert get_type_hints(RecommendationService.get_ranked_novels)["genre_id"] == int | None

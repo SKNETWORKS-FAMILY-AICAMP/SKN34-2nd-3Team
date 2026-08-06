@@ -20,8 +20,9 @@ def load_genres() -> list[dict]:
 
 
 @st.cache_data(ttl="15m", max_entries=100)
-def load_recommendations(genre_id: int, limit: int) -> list[dict]:
-    return RecommendationService(Repository()).get_ranked_novels(genre_id, limit=limit)
+def load_recommendations(genre_id: int | None, limit: int) -> list[dict]:
+    service = RecommendationService(Repository())
+    return service.get_ranked_novels(genre_id, limit=limit)
 
 
 st.title("무료 → 유료 전환 추천 센터")
@@ -42,10 +43,14 @@ if not genres:
     st.warning("분석 가능한 무료 연재 작품이 없습니다.", icon=":material/warning:")
     st.stop()
 
-genre_labels = {
-    f"{row['genre_name'] or '미분류'} ({int(row['novel_count']):,}편)": int(row["genre_id"])
-    for row in genres
-}
+all_genres_label = f"전체 ({sum(int(row['novel_count']) for row in genres):,}편)"
+genre_labels = {all_genres_label: None}
+genre_labels.update(
+    {
+        f"{row['genre_name'] or '미분류'} ({int(row['novel_count']):,}편)": int(row["genre_id"])
+        for row in genres
+    }
+)
 
 with st.sidebar:
     st.subheader("분석 조건")
@@ -73,6 +78,8 @@ if not recommendations:
     st.info("선택한 장르에는 점수가 계산된 후보가 없습니다.")
     st.stop()
 
+selected_genre_name = "전체" if selected_genre_id is None else recommendations[0]["genre_name"]
+
 
 def queue_author_navigation() -> None:
     click = st.session_state.get("recommendation_author_button")
@@ -92,7 +99,7 @@ def queue_author_navigation() -> None:
 
 integrated_scores = [float(row["integrated_average_score"]) for row in recommendations]
 with st.container(horizontal=True):
-    st.metric("분석 장르", recommendations[0]["genre_name"], border=True)
+    st.metric("분석 장르", selected_genre_name, border=True)
     st.metric("무료 후보 수", f"{len(recommendations):,}편", border=True)
     st.metric("평균 통합 점수", f"{sum(integrated_scores) / len(integrated_scores):.1f}", border=True)
 
@@ -106,10 +113,17 @@ for column, row in zip(card_columns, recommendations[:3]):
                 st.image(row["origin_cover_url"], use_container_width=True)
             st.page_link(
                 "pages/novel_basic_info.py",
-                label=str(row["title"]),
+                label=f"🔗 {row['title']}",
                 query_params={"url": str(row["novel_id"])},
             )
-            st.caption(f"작가 · {row['author_name'] or '정보 없음'}")
+            if row.get("author_id") is not None:
+                st.page_link(
+                    "pages/author_novels.py",
+                    label=f"작가 · {row['author_name'] or '정보 없음'}",
+                    query_params={"author_id": str(row["author_id"])},
+                )
+            else:
+                st.caption("작가 · 정보 없음")
             st.metric("통합 평균 점수", f"{float(row['integrated_average_score']):.1f}점")
             st.caption(f"기준 조회수 · {int(row['reference_view_count']):,}회")
 
@@ -124,7 +138,7 @@ ranking_frame = pd.DataFrame(
     }
 )
 
-st.subheader(f"{recommendations[0]['genre_name']} 전환 후보 순위")
+st.subheader(f"{selected_genre_name} 전환 후보 순위")
 st.dataframe(
     ranking_frame,
     hide_index=True,
