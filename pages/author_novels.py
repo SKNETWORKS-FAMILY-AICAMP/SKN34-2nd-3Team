@@ -65,13 +65,11 @@ if st.button("조회", type="primary") or query_author_id:
             st.stop()
 
         novels = service.get_novels_by_author(author_id)
-        scores_by_novel_id, retention_by_novel_id = (
-            recommendation_service.get_author_analysis(
-                [novel.novel_id for novel in novels]
-            )
+        scores_by_novel_id = recommendation_service.get_author_analysis(
+            [novel.novel_id for novel in novels]
         )
         average_retention, reflected_work_count = (
-            recommendation_service.author_average_retention(retention_by_novel_id)
+            recommendation_service.author_average_free_retention(scores_by_novel_id)
         )
         st.subheader(author.author_name or f"작가 {author_id}")
         st.caption(f"작가 ID {author_id} · 총 {len(novels):,}개 작품")
@@ -84,7 +82,7 @@ if st.button("조회", type="primary") or query_author_id:
         score_coverage_col, retention_summary_col = st.columns(2)
         with score_coverage_col:
             with st.container(border=True):
-                st.caption("조회 유지·타깃 점수")
+                st.caption("개별 추천 지표")
                 st.metric("분석 작품", f"{len(scores_by_novel_id):,} / {len(novels):,}")
         with retention_summary_col:
             with st.container(border=True):
@@ -118,7 +116,7 @@ if st.button("조회", type="primary") or query_author_id:
                         icon=":material/arrow_forward:",
                         query_params={"url": str(novel.novel_id)},
                     )
-                    metadata_cols = st.columns(3)
+                    metadata_cols = st.columns(5)
                     with metadata_cols[0]:
                         st.caption("연재 상태")
                         st.write(serialization_status(novel))
@@ -126,10 +124,16 @@ if st.button("조회", type="primary") or query_author_id:
                         st.caption("이용 구분")
                         st.write(payment_status(novel))
                     with metadata_cols[2]:
-                        st.caption("유료 전환 타깃 점수")
-                    score = scores_by_novel_id.get(novel.novel_id)
+                        st.caption("조회 규모 점수")
+                    scores = scores_by_novel_id.get(novel.novel_id, (None, None, None))
                     with metadata_cols[2]:
-                        render_analysis_score(score)
+                        render_analysis_score(scores[0])
+                    with metadata_cols[3]:
+                        st.caption("FREE 유지 점수")
+                        render_analysis_score(scores[1])
+                    with metadata_cols[4]:
+                        st.caption("PAID 유지 점수")
+                        render_analysis_score(scores[2])
     except NovelServiceError as exc:
         st.error(str(exc))
     except Exception as exc:

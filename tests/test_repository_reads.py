@@ -121,3 +121,16 @@ def test_episode_comment_list_reads_actual_commenter_fields(monkeypatch):
     assert "'' AS commenter_nickname" not in query
     assert "0 AS is_novel_author" not in query
     assert params == (11, 500)
+
+
+def test_find_recommendations_returns_author_id_without_extra_lookup(monkeypatch):
+    cursor = ReadCursor(rows=[])
+    repository = Repository()
+    use_cursor(monkeypatch, repository, cursor)
+
+    assert repository.find_recommendations_by_genre(3) == []
+
+    query, params = cursor.executed[0]
+    assert "n.novel_id, n.author_id, n.title" in query
+    assert params == (3,)
+    assert len(cursor.executed) == 1
