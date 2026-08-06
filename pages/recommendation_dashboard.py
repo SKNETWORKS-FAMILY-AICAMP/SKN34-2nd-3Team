@@ -89,6 +89,23 @@ if not recommendations:
     st.info("선택한 장르에는 점수가 계산된 후보가 없습니다.")
     st.stop()
 
+
+def queue_author_navigation() -> None:
+    click = st.session_state.get("recommendation_author_button")
+    if click is None:
+        return
+
+    clicked_row = int(click["row"])
+    if not 0 <= clicked_row < len(recommendations):
+        return
+
+    author_id = recommendations[clicked_row].get("author_id")
+    if author_id is None:
+        return
+
+    st.session_state["recommendation_author_target"] = str(author_id)
+
+
 score_values = [float(row["recommendation_score"]) for row in recommendations]
 dropout_values = [float(row["average_dropout_rate"]) * 100 for row in recommendations]
 with st.container(horizontal=True):
@@ -141,6 +158,7 @@ st.dataframe(
         ),
         "작가": st.column_config.ButtonColumn(
             "작가",
+            on_click=queue_author_navigation,
             key="recommendation_author_button",
         ),
         "타깃 점수": st.column_config.ProgressColumn(
@@ -169,17 +187,12 @@ if novel_clicked is not None:
             query_params={"url": novel_id},
         )
 
-author_clicked = st.session_state.get("recommendation_author_button")
-if author_clicked is not None:
-    clicked_row = int(author_clicked["row"])
-    if 0 <= clicked_row < len(recommendations):
-        clicked_author_id = recommendations[clicked_row].get("author_id")
-        if clicked_author_id is not None:
-            author_id = str(clicked_author_id)
-            st.switch_page(
-                "pages/author_novels.py",
-                query_params={"author_id": author_id},
-            )
+author_id = st.session_state.pop("recommendation_author_target", None)
+if author_id is not None:
+    st.switch_page(
+        "pages/author_novels.py",
+        query_params={"author_id": author_id},
+    )
 
 selected = recommendations[0]
 
