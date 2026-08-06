@@ -544,6 +544,18 @@ class Repository:
                         FROM comment AS c
                         WHERE c.novel_id = %s
                     ) AS stored_comment_count,
+                    (
+                        SELECT COUNT(*)
+                        FROM comment AS c
+                        JOIN episode AS e
+                            ON e.episode_id = c.episode_id
+                        WHERE c.novel_id = %s
+                          AND e.access_type = 'FREE'
+                          AND c.content_type = 'TEXT'
+                          AND c.reply_level = 0
+                          AND c.is_novel_author = FALSE
+                          AND TRIM(c.comment_text) <> ''
+                    ) AS eligible_comment_count,
                     COUNT(cs.comment_id) AS analyzed_comment_count,
                     COUNT(DISTINCT cs.episode_id) AS analyzed_episode_count,
                     COALESCE(
@@ -569,7 +581,7 @@ class Repository:
                 FROM comment_statistics AS cs
                 WHERE cs.novel_id = %s
                 """,
-                (novel_id, novel_id, novel_id),
+                (novel_id, novel_id, novel_id, novel_id),
             )
             row = cursor.fetchone()
 
@@ -596,6 +608,8 @@ class Repository:
                         AS source_comment_count,
                     COALESCE(ca.stored_comment_count, 0)
                         AS stored_comment_count,
+                    COALESCE(ca.eligible_comment_count, 0)
+                        AS eligible_comment_count,
                     COALESCE(sa.analyzed_comment_count, 0)
                         AS analyzed_comment_count,
                     COALESCE(sa.positive_count, 0)
@@ -613,8 +627,17 @@ class Repository:
                     SELECT
                         c.episode_id,
                         COUNT(*) AS stored_comment_count,
+                        SUM(
+                            ce.access_type = 'FREE'
+                            AND c.content_type = 'TEXT'
+                            AND c.reply_level = 0
+                            AND c.is_novel_author = FALSE
+                            AND TRIM(c.comment_text) <> ''
+                        ) AS eligible_comment_count,
                         MAX(c.collected_at) AS last_collected_at
                     FROM comment AS c
+                    JOIN episode AS ce
+                        ON ce.episode_id = c.episode_id
                     WHERE c.novel_id = %s
                     GROUP BY c.episode_id
                 ) AS ca
@@ -710,8 +733,8 @@ class Repository:
                 c.dislike_count,
                 c.created_at,
                 c.collected_at,
-                '' AS commenter_nickname,
-                0 AS is_novel_author,
+                c.commenter_nickname,
+                c.is_novel_author,
                 cs.predicted_label,
                 cs.negative_score,
                 cs.neutral_score,

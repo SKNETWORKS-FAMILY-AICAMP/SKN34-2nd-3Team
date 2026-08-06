@@ -358,6 +358,7 @@ def build_episode_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
         "like_count",
         "source_comment_count",
         "stored_comment_count",
+        "eligible_comment_count",
         "analyzed_comment_count",
         "positive_count",
         "neutral_count",
@@ -383,19 +384,21 @@ def build_episode_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
 def render_novel_reaction_overview(overview: dict[str, Any]) -> None:
     analyzed = safe_int(overview.get("analyzed_comment_count"))
     stored = safe_int(overview.get("stored_comment_count"))
+    eligible = safe_int(overview.get("eligible_comment_count"))
     positive_ratio = safe_float(overview.get("positive_ratio"))
     neutral_ratio = safe_float(overview.get("neutral_ratio"))
     negative_ratio = safe_float(overview.get("negative_ratio"))
     reaction_score = safe_float(overview.get("reaction_score"))
     confidence = safe_float(overview.get("average_confidence")) * 100
 
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
-    col1.metric("수집 댓글", f"{stored:,}")
-    col2.metric("분석 댓글", f"{analyzed:,}")
-    col3.metric("긍정", format_percent(positive_ratio))
-    col4.metric("중립", format_percent(neutral_ratio))
-    col5.metric("부정", format_percent(negative_ratio))
-    col6.metric(
+    col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
+    col1.metric("전체 수집", f"{stored:,}")
+    col2.metric("분석 대상", f"{eligible:,}")
+    col3.metric("분석 완료", f"{analyzed:,}")
+    col4.metric("긍정", format_percent(positive_ratio))
+    col5.metric("중립", format_percent(neutral_ratio))
+    col6.metric("부정", format_percent(negative_ratio))
+    col7.metric(
         "독자 반응 점수",
         f"{reaction_score:+.1f}",
         help="긍정 비율 - 부정 비율, 범위 -100~+100",
@@ -683,6 +686,7 @@ def render_episode_cards(
         title = str(row.get("episode_title") or "제목 없음")
         analyzed = safe_int(row.get("analyzed_comment_count"))
         stored = safe_int(row.get("stored_comment_count"))
+        eligible = safe_int(row.get("eligible_comment_count"))
         positive = safe_float(row.get("positive_ratio"))
         neutral = safe_float(row.get("neutral_ratio"))
         negative = safe_float(row.get("negative_ratio"))
@@ -705,7 +709,8 @@ def render_episode_cards(
                     f"{row.get('access_label')} · "
                     f"조회 {format_number(row.get('view_count'))} · "
                     f"원본 댓글 {format_number(row.get('source_comment_count'))} · "
-                    f"수집 {stored:,} · 분석 {analyzed:,}"
+                    f"전체 수집 {stored:,} · 분석 대상 {eligible:,} · "
+                    f"분석 완료 {analyzed:,}"
                 )
 
                 if analyzed > 0:
@@ -908,13 +913,15 @@ def render_episode_detail(
     episode_id = safe_int(summary.get("episode_id"))
     analyzed = safe_int(summary.get("analyzed_comment_count"))
     stored = safe_int(summary.get("stored_comment_count"))
+    eligible = safe_int(summary.get("eligible_comment_count"))
     confidence = safe_float(summary.get("average_confidence")) * 100
-    analysis_rate = (analyzed / stored * 100.0) if stored else 0.0
+    analysis_rate = safe_float(summary.get("analysis_rate"))
 
     st.markdown("---")
     st.caption(
         f"분석률 {analysis_rate:.1f}% "
-        f"({analyzed:,}/{stored:,}) · "
+        f"(분석 완료 {analyzed:,}/분석 대상 {eligible:,}) · "
+        f"전체 수집 {stored:,} · "
         f"평균 신뢰도 {confidence:.1f}%"
     )
 

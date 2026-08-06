@@ -42,6 +42,7 @@ class CommentSentimentService:
     def _with_ratios(self, row: dict[str, Any]) -> dict[str, Any]:
         result = dict(row)
         analyzed = self._int(result.get("analyzed_comment_count"))
+        eligible = self._int(result.get("eligible_comment_count"))
         positive = self._int(result.get("positive_count"))
         neutral = self._int(result.get("neutral_count"))
         negative = self._int(result.get("negative_count"))
@@ -50,7 +51,9 @@ class CommentSentimentService:
             stored_comment_count=self._int(
                 result.get("stored_comment_count")
             ),
+            eligible_comment_count=eligible,
             analyzed_comment_count=analyzed,
+            analysis_rate=(analyzed / eligible * 100.0) if eligible else 0.0,
             positive_count=positive,
             neutral_count=neutral,
             negative_count=negative,
