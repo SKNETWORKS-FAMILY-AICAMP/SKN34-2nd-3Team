@@ -39,9 +39,16 @@
 
 ## 🧰 기술 스택
 
-- **Language:** ![Static Badge](https://img.shields.io/badge/Python-3.12.0-%23f8db49?labelColor=4873a4)
-- **Database &amp; Storage:** ![Static Badge](https://img.shields.io/badge/MySQL-CSV-003B57) ![Static Badge](https://img.shields.io/badge/Hugging%20Face-Datasets-FFD21E)
-- **Web Framework:** ![Static Badge](https://img.shields.io/badge/Streamlit-1.60.0-%23FF4B4B)
+
+| 구분 | 기술 |
+| :--- | :--- |
+| Language | ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white) |
+| Web UI | ![Streamlit 1.60.0](https://img.shields.io/badge/Streamlit-1.60.0-FF4B4B?style=flat-square&logo=streamlit&logoColor=white) ![Streamlit Extras 1.6.0](https://img.shields.io/badge/Streamlit_Extras-1.6.0-FF4B4B?style=flat-square&logo=streamlit&logoColor=white) |
+| Machine Learning | ![scikit-learn 1.9.0](https://img.shields.io/badge/scikit--learn-1.9.0-F7931E?style=flat-square&logo=scikitlearn&logoColor=white) ![PyTorch 2.13.0](https://img.shields.io/badge/PyTorch-2.13.0-EE4C2C?style=flat-square&logo=pytorch&logoColor=white) ![XGBoost](https://img.shields.io/badge/XGBoost-ML-189FDD?style=flat-square) |
+| Database | ![MySQL 8.4](https://img.shields.io/badge/MySQL-8.4-4479A1?style=flat-square&logo=mysql&logoColor=white) |
+| Dataset | ![Hugging Face Hub 1.26.0](https://img.shields.io/badge/Hugging_Face_Hub-1.26.0-FFD21E?style=flat-square&logo=huggingface&logoColor=black) ![CSV](https://img.shields.io/badge/CSV-Data-217346?style=flat-square&logo=files&logoColor=white) |
+| Infrastructure | ![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white) |
+
 
 ## 🗂️ 폴더 구조
 
@@ -61,14 +68,11 @@ SKN34-2nd-3Team/
 ├── research/                  # 머신러닝 모델 실험 및 노트북
 ├── scripts/                   # 데이터 처리 및 모델 학습 스크립트
 ├── service/                   # 핵심 비즈니스 로직
-├── tests/                     # pytest 기반 테스트
 ├── .env.example               # 환경 변수 설정 예시
-├── .gitattributes
 ├── .gitignore
 ├── bootstrap.py               # 데이터 다운로드 및 DB 초기화
 ├── docker-compose.yml         # MySQL 컨테이너 구성
 ├── main.py                    # Streamlit 애플리케이션 진입점
-├── pytest.ini
 ├── README.md
 └── requirements.txt
 ```
