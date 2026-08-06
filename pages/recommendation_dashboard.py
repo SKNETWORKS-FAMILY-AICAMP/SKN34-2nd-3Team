@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -23,11 +22,6 @@ def load_genres() -> list[dict]:
 @st.cache_data(ttl="15m", max_entries=100)
 def load_recommendations(genre_id: int, limit: int) -> list[dict]:
     return RecommendationService(Repository()).get_ranked_novels(genre_id, limit=limit)
-
-
-@st.cache_data(ttl="15m", max_entries=100)
-def load_episode_dropout(novel_id: int) -> list[dict]:
-    return RecommendationService(Repository()).get_episode_dropout(novel_id)
 
 
 def percent(numerator: int, denominator: int) -> float:
@@ -161,29 +155,12 @@ selection = st.dataframe(
 selected_index = selection.selection.rows[0] if selection.selection.rows else 0
 selected = recommendations[selected_index]
 
-st.subheader(f"#{selected['rank']} {selected['title']}")
-summary_col, score_col = st.columns([3, 1], vertical_alignment="center")
-with summary_col:
-    st.markdown(f"**{selected['author_name'] or '작가 정보 없음'} · {selected['genre_name']}**")
-    st.write(selected.get("introduction") or "작품 소개가 수집되지 않았습니다.")
-    if selected.get("source_url"):
-        st.link_button(
-            "문피아에서 작품 보기",
-            selected["source_url"],
-            icon=":material/open_in_new:",
-        )
-with score_col:
-    st.metric(
-        "유료 전환 타깃 점수",
-        f"{float(selected['recommendation_score']):.1f} / 100",
-        selected.get("decision_label")
-        or decision_label(float(selected["recommendation_score"])),
-        border=True,
+if selected.get("source_url"):
+    st.link_button(
+        "문피아에서 작품 보기",
+        selected["source_url"],
+        icon=":material/open_in_new:",
     )
-
-with st.container(border=True):
-    st.markdown("#### 모델이 이 작품을 추천하는 이유")
-    st.write(selected["recommendation_reason"])
 
 with st.container(border=True):
     st.markdown("#### 25화 무료 → 첫 유료 회차 전환 예측")
@@ -235,80 +212,6 @@ with st.container(horizontal=True):
         f"{percent(positive_count, comment_total):.1f}%",
         border=True,
     )
-
-episode_rows = load_episode_dropout(int(selected["novel_id"]))
-episode_frame = pd.DataFrame(episode_rows)
-sentiment_frame = pd.DataFrame(
-    {
-        "감성": ["긍정", "부정", "중립"],
-        "댓글 수": [positive_count, negative_count, neutral_count],
-    }
-)
-
-dropout_col, sentiment_col = st.columns([3, 2])
-with dropout_col.container(border=True):
-    st.markdown("#### 회차별 독자 이탈률")
-    if episode_frame.empty:
-        st.info("이탈률을 계산할 수 있는 회차가 없습니다.")
-    else:
-        episode_frame["이탈률"] = pd.to_numeric(episode_frame["dropout_rate"])
-        episode_frame["위험"] = episode_frame["이탈률"].ge(0.10).map(
-            {True: "주의 구간", False: "안정 구간"}
-        )
-        chart = (
-            alt.Chart(episode_frame)
-            .mark_line(point=True)
-            .encode(
-                x=alt.X("episode_number:Q", title="회차"),
-                y=alt.Y("이탈률:Q", title="이탈률", axis=alt.Axis(format="%")),
-                color=alt.Color("위험:N", scale=alt.Scale(
-                    domain=["안정 구간", "주의 구간"], range=["#2563eb", "#dc2626"]
-                )),
-                tooltip=[
-                    alt.Tooltip("episode_number:Q", title="회차"),
-                    alt.Tooltip("access_type:N", title="구간"),
-                    alt.Tooltip("previous_view_count:Q", title="직전 조회", format=","),
-                    alt.Tooltip("view_count:Q", title="현재 조회", format=","),
-                    alt.Tooltip("이탈률:Q", title="이탈률", format=".2%"),
-                ],
-            )
-            .properties(height=330)
-        )
-        st.altair_chart(chart)
-        worst = episode_frame.nlargest(3, "이탈률")
-        if not worst.empty:
-            episodes_text = ", ".join(
-                f"{int(row.episode_number)}화({row['이탈률']:.1%})"
-                for _, row in worst.iterrows()
-            )
-            st.caption(f"우선 점검할 이탈 구간: {episodes_text}")
-
-with sentiment_col.container(border=True):
-    st.markdown("#### 댓글 감성 구성")
-    if comment_total:
-        sentiment_chart = (
-            alt.Chart(sentiment_frame)
-            .mark_arc(innerRadius=65)
-            .encode(
-                theta=alt.Theta("댓글 수:Q"),
-                color=alt.Color(
-                    "감성:N",
-                    scale=alt.Scale(
-                        domain=["긍정", "부정", "중립"],
-                        range=["#16a34a", "#dc2626", "#94a3b8"],
-                    ),
-                    legend=alt.Legend(title=None, orient="bottom"),
-                ),
-                tooltip=["감성:N", alt.Tooltip("댓글 수:Q", format=",")],
-            )
-            .properties(height=260)
-        )
-        st.altair_chart(sentiment_chart)
-        st.caption(
-            f"긍정 {positive_count:,} · 부정 {negative_count:,} · 중립 {neutral_count:,}"
-        )
-    else:
-        st.info("분석된 댓글이 없습니다.")
 
 with st.expander("점수 해석과 주의사항", icon=":material/info:"):
     st.markdown(

@@ -6,6 +6,7 @@ from service.collection_service import CollectionService
 class StubRepository:
     def __init__(self) -> None:
         self.saved: list[tuple[int, dict]] = []
+        self.calls: list[tuple[str, tuple, dict]] = []
 
     def novel_exists(self, novel_id: int) -> bool:
         return bool(self.saved)
@@ -13,6 +14,18 @@ class StubRepository:
     def save_result(self, novel_id: int, result: dict) -> dict[str, int]:
         self.saved.append((novel_id, result))
         return {"novel": 1, "episode": len(result.get("episode", []))}
+
+    def list_genre_options(self):
+        self.calls.append(("list_genre_options", (), {}))
+        return [(1, "판타지")]
+
+    def find_page(self, novel_id, page_size):
+        self.calls.append(("find_page", (novel_id, page_size), {}))
+        return 3
+
+    def list_novels(self, page, page_size, **filters):
+        self.calls.append(("list_novels", (page, page_size), filters))
+        return ([{"novel_id": 123}], 1)
 
 
 class FakeCrawler:
@@ -51,3 +64,24 @@ def test_progress_message():
     assert "완료 12/100" in message
     assert "처리 중 20개" in message
     assert "실패 2개" in message
+
+
+def test_collection_page_queries_delegate_to_repository_with_unchanged_arguments():
+    repository = StubRepository()
+    service = CollectionService(repository)
+    filters = {
+        "genre_id": 7,
+        "serial_status": "paused",
+        "min_view_count": 1000,
+        "min_preference_count": 100,
+        "min_chapter_count": 10,
+    }
+
+    assert service.list_genre_options() == [(1, "판타지")]
+    assert service.find_page(123, 20) == 3
+    assert service.list_novels(2, 20, **filters) == ([{"novel_id": 123}], 1)
+    assert repository.calls == [
+        ("list_genre_options", (), {}),
+        ("find_page", (123, 20), {}),
+        ("list_novels", (2, 20), filters),
+    ]

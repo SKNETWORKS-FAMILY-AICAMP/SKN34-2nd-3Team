@@ -54,6 +54,33 @@ class CollectionService:
     def _validate_novel_id(self, novel_id: int) -> None:
         NovelService._validate_novel_id(self, novel_id)
 
+    def list_genre_options(self) -> list[tuple[int, str]]:
+        return self.repository.list_genre_options()
+
+    def find_page(self, novel_id: int, page_size: int) -> int:
+        return self.repository.find_page(novel_id, page_size)
+
+    def list_novels(
+        self,
+        page: int,
+        page_size: int,
+        *,
+        genre_id: int | None = None,
+        serial_status: str | None = None,
+        min_view_count: int = 0,
+        min_preference_count: int = 0,
+        min_chapter_count: int = 0,
+    ) -> tuple[list[dict[str, Any]], int]:
+        return self.repository.list_novels(
+            page,
+            page_size,
+            genre_id=genre_id,
+            serial_status=serial_status,
+            min_view_count=min_view_count,
+            min_preference_count=min_preference_count,
+            min_chapter_count=min_chapter_count,
+        )
+
     @staticmethod
     def _optional_int(value: Any) -> int | None:
         try:

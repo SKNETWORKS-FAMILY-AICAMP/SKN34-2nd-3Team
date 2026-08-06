@@ -7,13 +7,15 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import mysql.connector
 from dotenv import dotenv_values, load_dotenv
 from huggingface_hub import HfApi, snapshot_download
 
 from clawler.munpia_crawler import ALL_HEADERS
+from service.paid_conversion_model_service import PaidConversionModelService
+from service.recommendation_metric_service import RecommendationMetricService
 
 
 ROOT = Path(__file__).resolve().parent
@@ -628,6 +630,34 @@ def prepare_application(
     container_id = start_mysql(resolved_env_file, env)
     wait_for_mysql(container_id, env, mysql_timeout)
     initialize_database(resolved_env_file, env, resolved_data_dir)
+
+    connection_factory: Callable[[], Any] = lambda: _connect(env)
+
+    print("Refreshing recommendation metrics...")
+    try:
+        RecommendationMetricService(
+            connection_factory=connection_factory
+        ).refresh_all()
+    except Exception as error:
+        raise BootstrapError(
+            f"RecommendationMetricService.refresh_all failed: {error}"
+        ) from error
+    print("Recommendation metrics are ready")
+
+    print("Training paid conversion model and refreshing predictions...")
+    try:
+        result = PaidConversionModelService(
+            connection_factory=connection_factory
+        ).train_and_predict_all()
+    except Exception as error:
+        raise BootstrapError(
+            "PaidConversionModelService.train_and_predict_all failed: "
+            f"{error}"
+        ) from error
+    print(
+        f"trained={result.trained_count} candidates={result.candidate_count} "
+        f"conversion_mae={result.model_mae:.4f}"
+    )
 
 
 def run() -> None:
