@@ -59,6 +59,63 @@ def test_save_result_uses_one_db_transaction(monkeypatch):
     assert any("INSERT INTO `episode`" in query for query in queries)
 
 
+def test_save_result_clears_comment_parent_references_before_delete(monkeypatch):
+    connection = RecordingConnection()
+    repository = Repository()
+    monkeypatch.setattr(repository, "get_connection", lambda: connection)
+
+    repository.save_result(1, result(1))
+
+    queries = [query for query, _ in connection.cursor_instance.executed]
+    clear_index = next(
+        index
+        for index, query in enumerate(queries)
+        if "SET child.parent_comment_id = NULL" in query
+    )
+    delete_index = next(
+        index
+        for index, query in enumerate(queries)
+        if "DELETE FROM comment" in query
+    )
+    assert clear_index < delete_index
+
+
+def test_save_result_includes_required_comment_metadata(monkeypatch):
+    connection = RecordingConnection()
+    repository = Repository()
+    monkeypatch.setattr(repository, "get_connection", lambda: connection)
+    collected = result(1)
+    collected["comment"] = [
+        {
+            "comment_id": 101,
+            "novel_id": 1,
+            "episode_id": 11,
+            "commenter_nickname": "",
+            "commenter_blog_url": "",
+            "is_novel_author": "",
+            "source_parent_comment_id": "",
+            "crawl_status": "",
+        }
+    ]
+
+    repository.save_result(1, collected)
+
+    query, params = next(
+        (query, params)
+        for query, params in connection.cursor_instance.executed
+        if "INSERT INTO `comment`" in query
+    )
+    for column in (
+        "commenter_nickname",
+        "commenter_blog_url",
+        "is_novel_author",
+        "source_parent_comment_id",
+        "crawl_status",
+    ):
+        assert f"`{column}`" in query
+    assert params[-5:] == ("", None, False, None, "UNKNOWN")
+
+
 def test_save_result_rejects_mismatched_novel_id():
     with pytest.raises(ValueError, match="novel_id"):
         Repository().save_result(1, result(2))

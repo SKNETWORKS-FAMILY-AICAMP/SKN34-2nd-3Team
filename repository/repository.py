@@ -555,6 +555,16 @@ class Repository:
                 self._upsert_raw_rows(cursor, table, self._as_rows(result.get(table)))
             self._upsert_raw_rows(cursor, "novel", [novel_data])
 
+            cursor.execute(
+                """
+                UPDATE comment AS child
+                JOIN comment AS parent
+                    ON parent.comment_id = child.parent_comment_id
+                SET child.parent_comment_id = NULL
+                WHERE parent.novel_id = %s
+                """,
+                (novel_id,),
+            )
             cursor.execute("DELETE FROM comment WHERE novel_id = %s", (novel_id,))
             cursor.execute("DELETE FROM episode WHERE novel_id = %s", (novel_id,))
             cursor.execute("DELETE FROM novel_statistics WHERE novel_id = %s", (novel_id,))
@@ -926,6 +936,8 @@ class Repository:
             "comment_id", "novel_id", "episode_id", "parent_comment_id", "reply_level",
             "content_type", "comment_text", "like_count", "dislike_count", "created_at",
             "secret", "report_status", "block_status", "collected_at",
+            "commenter_nickname", "commenter_blog_url", "is_novel_author",
+            "source_parent_comment_id", "crawl_status",
         ),
     }
     _PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
@@ -963,9 +975,21 @@ class Repository:
             f"ON DUPLICATE KEY UPDATE {assignments}"
         )
         for row in rows:
+            values = []
+            for column in columns:
+                value = row.get(column)
+                if table == "comment" and column == "commenter_nickname":
+                    value = "" if value in (None, "") else value
+                elif table == "comment" and column == "is_novel_author":
+                    value = False if value in (None, "") else value
+                elif table == "comment" and column == "crawl_status":
+                    value = value or "UNKNOWN"
+                elif value == "":
+                    value = None
+                values.append(value)
             cursor.execute(
                 query,
-                tuple(None if row.get(column) == "" else row.get(column) for column in columns),
+                tuple(values),
             )
 
     def save_collection(
