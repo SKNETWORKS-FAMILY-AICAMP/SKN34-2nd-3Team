@@ -362,12 +362,18 @@ class Repository:
             return cursor.fetchall()
 
     def find_recommendations_by_genre(
-        self, genre_id: int
+        self, genre_id: int | None
     ) -> list[dict[str, Any]]:
         """Return every eligible novel in a genre for service-side ranking."""
+        genre_filter = ""
+        params: tuple[int, ...] = ()
+        if genre_id is not None:
+            genre_filter = "AND n.genre_1 = %s"
+            params = (genre_id,)
+
         with self._cursor(dictionary=True) as cursor:
             cursor.execute(
-                """
+                f"""
                 SELECT
                     n.novel_id, n.author_id, n.title, n.source_url, n.origin_cover_url,
                     COALESCE(a.author_name, '') AS author_name,
@@ -390,13 +396,14 @@ class Repository:
                     ) AS chapter_count
                 FROM novel AS n
                 JOIN novel_genre AS g
-                  ON g.genre_id = %s AND g.genre_id = n.genre_1
+                  ON g.genre_id = n.genre_1
                 JOIN novel_recommendation_score AS r ON r.novel_id = n.novel_id
                   AND r.scored_episode_count >= 1
                   AND r.free_retention_score IS NOT NULL
                 LEFT JOIN novel_author AS a ON a.author_id = n.author_id
                 LEFT JOIN novel_statistics AS s ON s.novel_id = n.novel_id
                 WHERE n.free = 1
+                  {genre_filter}
                   AND COALESCE(n.paid_serial, 0) = 0
                   AND COALESCE(n.finish, 0) = 0
                   AND COALESCE(n.pause, 0) = 0
@@ -408,7 +415,7 @@ class Repository:
                   )
                 ORDER BY n.novel_id
                 """,
-                (genre_id,),
+                params,
             )
             return cursor.fetchall()
 

@@ -68,6 +68,21 @@ def test_dashboard_has_top_three_cards_and_only_simplified_table_columns() -> No
     assert "사용 가능한 조회 규모/FREE 유지/PAID 유지 점수의 동일 가중 평균, 결측 제외" in source
 
 
+def test_top_three_cards_expose_novel_and_optional_author_page_links() -> None:
+    source = PAGE.read_text(encoding="utf-8")
+    cards_start = source.index("for column, row in zip(card_columns, recommendations[:3]):")
+    cards_end = source.index("ranking_frame = pd.DataFrame(", cards_start)
+    cards_source = source[cards_start:cards_end]
+
+    assert 'label=f"🔗 {row[\'title\']}"' in cards_source
+    assert 'query_params={"url": str(row["novel_id"])}' in cards_source
+    assert 'if row.get("author_id") is not None:' in cards_source
+    assert '"pages/author_novels.py"' in cards_source
+    assert 'label=f"작가 · {row[\'author_name\'] or \'정보 없음\'}"' in cards_source
+    assert 'query_params={"author_id": str(row["author_id"])}' in cards_source
+    assert 'st.caption("작가 · 정보 없음")' in cards_source
+
+
 def test_dataframe_selection_and_external_link_are_removed() -> None:
     source = PAGE.read_text(encoding="utf-8")
 
@@ -78,3 +93,20 @@ def test_dataframe_selection_and_external_link_are_removed() -> None:
     assert "문피아에서 작품 보기" not in source
     assert "st.link_button(" not in source
     assert "st.column_config.LinkColumn(" not in source
+
+
+def test_dashboard_offers_all_genres_first_and_uses_actual_candidate_sum() -> None:
+    source = PAGE.read_text(encoding="utf-8")
+
+    assert 'all_genres_label = f"전체 ({sum(int(row[\'novel_count\']) for row in genres):,}편)"' in source
+    assert "genre_labels = {all_genres_label: None}" in source
+    assert "genre_labels.update(" in source
+    assert "def load_recommendations(genre_id: int | None" in source
+
+
+def test_dashboard_labels_all_selection_as_all_in_summary_and_ranking() -> None:
+    source = PAGE.read_text(encoding="utf-8")
+
+    assert 'selected_genre_name = "전체" if selected_genre_id is None else recommendations[0]["genre_name"]' in source
+    assert 'st.metric("분석 장르", selected_genre_name, border=True)' in source
+    assert 'st.subheader(f"{selected_genre_name} 전환 후보 순위")' in source

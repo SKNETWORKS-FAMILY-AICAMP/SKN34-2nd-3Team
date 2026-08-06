@@ -558,31 +558,42 @@ def initialize_database(
                 "database is partially initialized; refusing automatic migration. "
                 f"Missing tables: {', '.join(missing)}"
             )
-
+        print("[info] V1 마이그레이션 진행중")
         _execute_migration(
             MIGRATION_DIR / "V1__create_initial_schema.sql",
             env_file,
             env,
             data_dir,
         )
+        print("[info] V2 마이그레이션 진행중")
         _execute_migration(
             MIGRATION_DIR / "V2__load_csv_data.sql",
             env_file,
             env,
             data_dir,
         )
+        print("[info] V3 마이그레이션 진행중")
         _execute_migration(
             MIGRATION_DIR / "V3__create_recommendation_dashboard.sql",
             env_file,
             env,
             data_dir,
         )
+        print("[info] V4 마이그레이션 진행중")
         _execute_migration(
             MIGRATION_DIR / "V4__create_paid_conversion_prediction.sql",
             env_file,
             env,
             data_dir,
         )
+        print("[info] V5 마이그레이션 진행중")
+        _execute_migration(
+            MIGRATION_DIR / "V5__create_comment_statistics.sql",
+            env_file,
+            env,
+            data_dir,
+        )
+        print("[info] 데이터 분석 진행중")
         _ensure_comment_statistics(
             connection,
             env_file,

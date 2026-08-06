@@ -15,7 +15,7 @@ class RecommendationService:
         return self.repository.list_recommendation_genres()
 
     def get_ranked_novels(
-        self, genre_id: int, *, limit: int = 20
+        self, genre_id: int | None, *, limit: int = 20
     ) -> list[dict[str, Any]]:
         if limit <= 0:
             raise ValueError("limit must be greater than zero")

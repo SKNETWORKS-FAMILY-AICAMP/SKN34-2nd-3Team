@@ -134,3 +134,34 @@ def test_find_recommendations_returns_author_id_without_extra_lookup(monkeypatch
     assert "n.novel_id, n.author_id, n.title" in query
     assert params == (3,)
     assert len(cursor.executed) == 1
+
+
+def test_find_recommendations_without_genre_omits_only_genre_filter(monkeypatch):
+    cursor = ReadCursor(rows=[])
+    repository = Repository()
+    use_cursor(monkeypatch, repository, cursor)
+
+    assert repository.find_recommendations_by_genre(None) == []
+
+    query, params = cursor.executed[0]
+    assert "JOIN novel_genre AS g ON g.genre_id = n.genre_1" in query
+    assert "g.genre_id = %s" not in query
+    assert "n.free = 1" in query
+    assert "paid_serial, 0) = 0" in query
+    assert "finish, 0) = 0" in query
+    assert "pause, 0) = 0" in query
+    assert "episode_number >= 30" in query
+    assert "r.free_retention_score IS NOT NULL" in query
+    assert params == ()
+
+
+def test_find_recommendations_with_genre_preserves_parameter_contract(monkeypatch):
+    cursor = ReadCursor(rows=[])
+    repository = Repository()
+    use_cursor(monkeypatch, repository, cursor)
+
+    repository.find_recommendations_by_genre(3)
+
+    query, params = cursor.executed[0]
+    assert "n.genre_1 = %s" in query
+    assert params == (3,)
