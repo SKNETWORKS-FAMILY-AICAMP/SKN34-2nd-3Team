@@ -69,3 +69,16 @@ def test_get_primary_genre_name_returns_none_when_missing(monkeypatch):
     use_cursor(monkeypatch, repository, cursor)
 
     assert repository.get_primary_genre_name(7) is None
+
+
+def test_find_recommendations_returns_author_id_without_extra_lookup(monkeypatch):
+    cursor = ReadCursor(rows=[])
+    repository = Repository()
+    use_cursor(monkeypatch, repository, cursor)
+
+    assert repository.find_recommendations_by_genre(3, limit=12) == []
+
+    query, params = cursor.executed[0]
+    assert "n.novel_id, n.author_id, n.title" in query
+    assert params == (3, 12)
+    assert len(cursor.executed) == 1

@@ -26,12 +26,32 @@ def test_removed_selected_detail_feedback_is_absent() -> None:
 def test_remaining_dashboard_contract_is_preserved() -> None:
     source = PAGE.read_text(encoding="utf-8")
 
-    assert "selection = st.dataframe(" in source
-    assert "selected_index = selection.selection.rows[0]" in source
-    assert 'if selected.get("source_url"):' in source
-    assert '"문피아에서 작품 보기"' in source
+    assert "st.dataframe(" in source
+    assert '"작품명": st.column_config.ButtonColumn(' in source
+    assert 'key="recommendation_novel_button"' in source
+    assert '"작가": st.column_config.ButtonColumn(' in source
+    assert 'key="recommendation_author_button"' in source
+    assert 'st.session_state.get("recommendation_novel_button")' in source
+    assert 'st.session_state.get("recommendation_author_button")' in source
+    assert '"pages/novel_basic_info.py"' in source
+    assert 'query_params={"url": novel_id}' in source
+    assert '"pages/author_novels.py"' in source
+    assert 'query_params={"author_id": author_id}' in source
+    assert "selected = recommendations[0]" in source
     assert "25화 무료 → 첫 유료 회차 전환 예측" in source
     assert "with st.container(horizontal=True):" in source
     assert "with st.sidebar:" in source
     assert "점수 해석과 주의사항" in source
     assert "def percent(" in source
+
+
+def test_dataframe_selection_and_external_link_are_removed() -> None:
+    source = PAGE.read_text(encoding="utf-8")
+
+    assert 'on_select="rerun"' not in source
+    assert 'selection_mode="single-row"' not in source
+    assert "selection.selection.rows" not in source
+    assert "selected_index" not in source
+    assert "문피아에서 작품 보기" not in source
+    assert "st.link_button(" not in source
+    assert "st.column_config.LinkColumn(" not in source

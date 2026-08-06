@@ -377,7 +377,7 @@ class Repository:
             cursor.execute(
                 """
                 SELECT
-                    n.novel_id, n.title, n.source_url, n.introduction,
+                    n.novel_id, n.author_id, n.title, n.source_url, n.introduction,
                     COALESCE(a.author_name, '') AS author_name,
                     g.genre_name,
                     r.free_score AS recommendation_score,

@@ -130,13 +130,19 @@ ranking_frame = pd.DataFrame(
 )
 
 st.subheader(f"{recommendations[0]['genre_name']} 전환 후보 순위")
-selection = st.dataframe(
+st.dataframe(
     ranking_frame,
     hide_index=True,
-    on_select="rerun",
-    selection_mode="single-row",
     column_config={
-        "작품명": st.column_config.TextColumn(pinned=True),
+        "작품명": st.column_config.ButtonColumn(
+            "작품명",
+            pinned=True,
+            key="recommendation_novel_button",
+        ),
+        "작가": st.column_config.ButtonColumn(
+            "작가",
+            key="recommendation_author_button",
+        ),
         "타깃 점수": st.column_config.ProgressColumn(
             min_value=0, max_value=100, format="%.1f점"
         ),
@@ -152,15 +158,30 @@ selection = st.dataframe(
         "중립 댓글": st.column_config.NumberColumn(format="localized"),
     },
 )
-selected_index = selection.selection.rows[0] if selection.selection.rows else 0
-selected = recommendations[selected_index]
 
-if selected.get("source_url"):
-    st.link_button(
-        "문피아에서 작품 보기",
-        selected["source_url"],
-        icon=":material/open_in_new:",
-    )
+novel_clicked = st.session_state.get("recommendation_novel_button")
+if novel_clicked is not None:
+    clicked_row = int(novel_clicked["row"])
+    if 0 <= clicked_row < len(recommendations):
+        novel_id = str(recommendations[clicked_row]["novel_id"])
+        st.switch_page(
+            "pages/novel_basic_info.py",
+            query_params={"url": novel_id},
+        )
+
+author_clicked = st.session_state.get("recommendation_author_button")
+if author_clicked is not None:
+    clicked_row = int(author_clicked["row"])
+    if 0 <= clicked_row < len(recommendations):
+        clicked_author_id = recommendations[clicked_row].get("author_id")
+        if clicked_author_id is not None:
+            author_id = str(clicked_author_id)
+            st.switch_page(
+                "pages/author_novels.py",
+                query_params={"author_id": author_id},
+            )
+
+selected = recommendations[0]
 
 with st.container(border=True):
     st.markdown("#### 25화 무료 → 첫 유료 회차 전환 예측")
