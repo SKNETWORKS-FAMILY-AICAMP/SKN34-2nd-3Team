@@ -65,7 +65,8 @@ def test_dashboard_has_top_three_cards_and_only_simplified_table_columns() -> No
 
     assert "무료 후보 수" in source
     assert "평균 통합 점수" in source
-    assert "사용 가능한 조회 규모/FREE 유지/PAID 유지 점수의 동일 가중 평균, 결측 제외" in source
+    assert "조회 규모(1.25배), FREE/PAID 유지, 댓글 반응(0~100 변환)" in source
+    assert "분석 댓글이 0개인 작품은 댓글 반응 점수를 결측으로 제외" in source
 
 
 def test_top_three_cards_expose_novel_and_optional_author_page_links() -> None:

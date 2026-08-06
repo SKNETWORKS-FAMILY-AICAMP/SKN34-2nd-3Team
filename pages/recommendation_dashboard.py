@@ -68,7 +68,7 @@ with st.sidebar:
             1. 초기 이탈 구간인 1~25화와 FREE/PAID 전환 회차를 제외합니다.
             2. 최신 게시일보다 7일 이상 지난 가장 최근 회차를 기준 조회수로 사용합니다.
             3. 조회수 10부터 데이터 기반 최대값까지 로그 간격으로 5등급을 나눕니다.
-            4. 사용 가능한 조회 규모/FREE 유지/PAID 유지 점수의 동일 가중 평균, 결측 제외 방식으로 통합합니다.
+            4. 조회 규모 점수는 1.25배, 댓글 반응은 0~100으로 변환한 뒤 사용 가능한 구성요소를 동일 가중 평균합니다.
             """
         )
 
@@ -110,7 +110,7 @@ for column, row in zip(card_columns, recommendations[:3]):
         with st.container(border=True):
             st.markdown(f"### {int(row['rank'])}위")
             if row.get("origin_cover_url"):
-                st.image(row["origin_cover_url"], use_container_width=True)
+                st.image(row["origin_cover_url"], width="stretch")
             st.page_link(
                 "pages/novel_basic_info.py",
                 label=f"🔗 {row['title']}",
@@ -185,10 +185,11 @@ if author_id is not None:
 with st.expander("점수 해석과 주의사항", icon=":material/info:"):
     st.markdown(
         """
-        - **통합 평균 점수**는 사용 가능한 조회 규모/FREE 유지/PAID 유지 점수의 동일 가중 평균, 결측 제외 방식으로 계산합니다.
+        - **통합 평균 점수**는 조회 규모(1.25배), FREE/PAID 유지, 댓글 반응(0~100 변환) 중 사용 가능한 점수의 동일 가중 평균입니다.
         - 조회수 구간은 10부터 수집된 무료 작품의 최대 기준 조회수까지 로그 간격으로 5등분합니다.
         - 수집 자료의 최대 기준 조회수가 10만 이상이면 점수 상한은 10만으로 고정합니다.
         - **기준 조회수**는 최신 게시일보다 최소 7일 전에 게시된 가장 최근 회차의 조회수입니다.
         - 결측 점수는 0점으로 대체하지 않으며, 값이 있는 점수만 평균에 참여합니다.
+        - 분석 댓글이 0개인 작품은 댓글 반응 점수를 결측으로 제외합니다.
         """
     )

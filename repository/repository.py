@@ -7,6 +7,7 @@ independent from project_1 and project_2.
 from __future__ import annotations
 
 import os
+import threading
 from contextlib import contextmanager
 from typing import Any, Iterator, Sequence
 
@@ -28,13 +29,22 @@ class Repository:
     """Singleton MySQL repository for novels and collected child records."""
 
     _instance: Repository | None = None
-    connection: MySQLConnection | None
+    _connections: threading.local
 
     def __new__(cls) -> Repository:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance.connection = None
+            cls._instance._connections = threading.local()
         return cls._instance
+
+    @property
+    def connection(self) -> MySQLConnection | None:
+        """Return the connection cached for the current thread."""
+        return getattr(self._connections, "connection", None)
+
+    @connection.setter
+    def connection(self, value: MySQLConnection | None) -> None:
+        self._connections.connection = value
 
     def get_connection(self) -> MySQLConnection:
         """Return a live connection, reconnecting when necessary."""
@@ -47,6 +57,7 @@ class Repository:
                 database=os.getenv("DB_NAME", os.getenv("MYSQL_DATABASE")),
                 charset="utf8mb4",
                 use_unicode=True,
+                use_pure=True,
                 autocommit=False,
             )
         return self.connection
@@ -173,8 +184,8 @@ class Repository:
 
     def get_author_analysis(
         self, novel_ids: Sequence[int]
-    ) -> dict[int, tuple[float | None, float | None, float | None]]:
-        """Bulk-load independent recommendation score components."""
+    ) -> dict[int, dict[str, Any]]:
+        """Bulk-load recommendation and existing comment sentiment components."""
         unique_ids = list(dict.fromkeys(int(novel_id) for novel_id in novel_ids))
         if not unique_ids:
             return {}
@@ -184,27 +195,30 @@ class Repository:
             cursor.execute(
                 f"""
                 SELECT n.novel_id, r.view_scale_score,
-                       r.free_retention_score, r.paid_retention_score
+                       r.free_retention_score, r.paid_retention_score,
+                       COALESCE(cs.analyzed_comment_count, 0) AS analyzed_comment_count,
+                       COALESCE(cs.positive_count, 0) AS positive_count,
+                       COALESCE(cs.neutral_count, 0) AS neutral_count,
+                       COALESCE(cs.negative_count, 0) AS negative_count
                 FROM novel AS n
                 LEFT JOIN novel_recommendation_score AS r
                   ON r.novel_id = n.novel_id
+                LEFT JOIN (
+                    SELECT novel_id,
+                           COUNT(*) AS analyzed_comment_count,
+                           SUM(predicted_label = 'positive') AS positive_count,
+                           SUM(predicted_label = 'neutral') AS neutral_count,
+                           SUM(predicted_label = 'negative') AS negative_count
+                    FROM comment_statistics
+                    GROUP BY novel_id
+                ) AS cs ON cs.novel_id = n.novel_id
                 WHERE n.novel_id IN ({placeholders})
                 """,
                 tuple(unique_ids),
             )
             rows = cursor.fetchall()
         return {
-            int(row["novel_id"]): (
-                float(row["view_scale_score"])
-                if row.get("view_scale_score") is not None
-                else None,
-                float(row["free_retention_score"])
-                if row.get("free_retention_score") is not None
-                else None,
-                float(row["paid_retention_score"])
-                if row.get("paid_retention_score") is not None
-                else None,
-            )
+            int(row["novel_id"]): dict(row)
             for row in rows
         }
 
@@ -429,6 +443,10 @@ class Repository:
                     g.genre_name,
                     r.view_scale_score, r.free_retention_score,
                     r.paid_retention_score, r.reference_view_count,
+                    COALESCE(cs.analyzed_comment_count, 0) AS analyzed_comment_count,
+                    COALESCE(cs.positive_count, 0) AS positive_count,
+                    COALESCE(cs.neutral_count, 0) AS neutral_count,
+                    COALESCE(cs.negative_count, 0) AS negative_count,
                     r.view_scale_max, r.view_grade,
                     r.scored_episode_count, r.average_dropout_rate,
                     COALESCE(s.view_count, 0) AS view_count,
@@ -451,6 +469,15 @@ class Repository:
                   AND r.free_retention_score IS NOT NULL
                 LEFT JOIN novel_author AS a ON a.author_id = n.author_id
                 LEFT JOIN novel_statistics AS s ON s.novel_id = n.novel_id
+                LEFT JOIN (
+                    SELECT novel_id,
+                           COUNT(*) AS analyzed_comment_count,
+                           SUM(predicted_label = 'positive') AS positive_count,
+                           SUM(predicted_label = 'neutral') AS neutral_count,
+                           SUM(predicted_label = 'negative') AS negative_count
+                    FROM comment_statistics
+                    GROUP BY novel_id
+                ) AS cs ON cs.novel_id = n.novel_id
                 WHERE n.free = 1
                   {genre_filter}
                   AND COALESCE(n.paid_serial, 0) = 0

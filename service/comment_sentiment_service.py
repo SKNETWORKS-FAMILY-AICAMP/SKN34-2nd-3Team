@@ -39,6 +39,19 @@ class CommentSentimentService:
             return "참고용"
         return "일반 분석"
 
+    @staticmethod
+    def reaction_score_from_counts(
+        positive_count: int, negative_count: int, analyzed_comment_count: int
+    ) -> float | None:
+        """Return the shared -100..100 reaction definition, or missing when unanalyzed."""
+        if analyzed_comment_count <= 0:
+            return None
+        return (
+            (positive_count - negative_count)
+            / analyzed_comment_count
+            * 100.0
+        )
+
     def _with_ratios(self, row: dict[str, Any]) -> dict[str, Any]:
         result = dict(row)
         analyzed = self._int(result.get("analyzed_comment_count"))
@@ -61,9 +74,8 @@ class CommentSentimentService:
             neutral_ratio=(neutral / analyzed * 100.0) if analyzed else 0.0,
             negative_ratio=(negative / analyzed * 100.0) if analyzed else 0.0,
             reaction_score=(
-                (positive - negative) / analyzed * 100.0
-                if analyzed
-                else 0.0
+                self.reaction_score_from_counts(positive, negative, analyzed)
+                or 0.0
             ),
             average_confidence=self._float(
                 result.get("average_confidence")

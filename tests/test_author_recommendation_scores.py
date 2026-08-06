@@ -28,9 +28,9 @@ def test_repository_bulk_loads_independent_recommendation_scores_in_one_query(mo
     repository = Repository()
     cursor = ReadCursor(
         [
-            {"novel_id": 20, "view_scale_score": 80.0, "free_retention_score": 60.0, "paid_retention_score": 80.0},
-            {"novel_id": 10, "view_scale_score": 40.0, "free_retention_score": 50.0, "paid_retention_score": None},
-            {"novel_id": 30, "view_scale_score": None, "free_retention_score": None, "paid_retention_score": 90.0},
+            {"novel_id": 20, "view_scale_score": 80.0, "free_retention_score": 60.0, "paid_retention_score": 80.0, "analyzed_comment_count": 4, "positive_count": 3, "neutral_count": 0, "negative_count": 1},
+            {"novel_id": 10, "view_scale_score": 40.0, "free_retention_score": 50.0, "paid_retention_score": None, "analyzed_comment_count": 0, "positive_count": 0, "neutral_count": 0, "negative_count": 0},
+            {"novel_id": 30, "view_scale_score": None, "free_retention_score": None, "paid_retention_score": 90.0, "analyzed_comment_count": 2, "positive_count": 0, "neutral_count": 1, "negative_count": 1},
         ]
     )
 
@@ -43,16 +43,19 @@ def test_repository_bulk_loads_independent_recommendation_scores_in_one_query(mo
 
     scores = repository.get_author_analysis([20, 10, 30, 20])
 
-    assert scores == {
-        20: (80.0, 60.0, 80.0),
-        10: (40.0, 50.0, None),
-        30: (None, None, 90.0),
-    }
+    assert scores[20]["positive_count"] == 3
+    assert scores[10]["analyzed_comment_count"] == 0
+    assert scores[30]["paid_retention_score"] == 90.0
     assert len(cursor.executed) == 1
     query, params = cursor.executed[0]
     assert "r.view_scale_score" in query
     assert "r.free_retention_score" in query
     assert "r.paid_retention_score" in query
+    assert "FROM comment_statistics" in query
+    assert "GROUP BY novel_id" in query
+    assert "positive_count" in query
+    assert "neutral_count" in query
+    assert "negative_count" in query
     assert "r.recommendation_score" not in query
     assert "LEFT JOIN novel_recommendation_score AS r" in query
     assert "novel_paid_conversion_prediction" not in query
@@ -78,22 +81,33 @@ def test_recommendation_service_delegates_bulk_author_analysis_lookup():
 
         def get_author_analysis(self, novel_ids):
             self.calls.append(list(novel_ids))
-            return {10: (60.0, 40.0, 80.0), 20: (20.0, None, 90.0)}
+            return {
+                10: {"view_scale_score": 60.0, "free_retention_score": 40.0,
+                     "paid_retention_score": 80.0, "analyzed_comment_count": 0},
+                20: {"view_scale_score": 20.0, "free_retention_score": None,
+                     "paid_retention_score": 90.0, "analyzed_comment_count": 2,
+                     "positive_count": 1, "negative_count": 1},
+            }
 
     repository = StubRepository()
     service = RecommendationService(repository)
 
-    assert service.get_author_analysis([10, 20]) == {
-        10: (60.0, 40.0, 80.0),
-        20: (20.0, None, 90.0),
-    }
+    result = service.get_author_analysis([10, 20])
+    assert result[10]["reaction_score"] is None
+    assert result[10]["integrated_average_score"] == 65.0
+    assert result[20]["reaction_score"] == 0.0
+    assert result[20]["integrated_average_score"] == 55.0
     assert repository.calls == [[10, 20]]
 
 
-def test_author_average_free_retention_ignores_missing_values():
-    scores = {10: (60.0, 40.0, 80.0), 20: (20.0, None, 90.0)}
-    assert RecommendationService.author_average_free_retention(scores) == (40.0, 1)
-    assert RecommendationService.author_average_free_retention({}) == (None, 0)
+def test_author_average_integrated_score_ignores_uncalculable_novels():
+    scores = {
+        10: {"integrated_average_score": 65.0},
+        20: {"integrated_average_score": 55.0},
+        30: {"integrated_average_score": None},
+    }
+    assert RecommendationService.author_average_integrated_score(scores) == (60.0, 2)
+    assert RecommendationService.author_average_integrated_score({}) == (None, 0)
 
 
 def test_author_page_uses_one_bulk_analysis_call_and_summary_cards():
@@ -106,11 +120,13 @@ def test_author_page_uses_one_bulk_analysis_call_and_summary_cards():
     )
     assert "개별 추천 지표" in source
     assert "유료 전환 예측" not in source
-    assert "작가 평균 조회 유지 점수" in source
+    assert "작가 평균 통합점수" in source
     assert "반영 작품" in source
     assert "조회 규모 점수" in source
     assert "FREE 유지 점수" in source
     assert "PAID 유지 점수" in source
+    assert "댓글 반응 점수" in source
+    assert "작품 통합점수" in source
     assert 'f"{score:.1f} / 100"' in source
     assert '"분석 대상 아님"' in source
     assert "border-radius" in source
@@ -127,7 +143,7 @@ def test_author_page_links_real_author_url_and_uses_compact_body_metadata():
     assert "작가 개인 페이지" in source
     assert "status_col" not in source
     assert "cover_col, body_col = st.columns" in source
-    assert "metadata_cols = st.columns(5)" in source
+    assert "metadata_cols = st.columns(7)" in source
 
 
 def _load_page_function(name):

@@ -46,7 +46,7 @@ def test_dashboard_displays_integrated_average_without_individual_score_columns(
     assert "recommendation_score" not in source
 
 
-def test_repository_returns_all_eligible_candidates_without_prediction_or_comments():
+def test_repository_returns_all_eligible_candidates_with_bulk_comment_counts():
     source = REPOSITORY.read_text(encoding="utf-8")
     start = source.index("def find_recommendations_by_genre(")
     end = source.index("def get_recommendation_episode_scores(", start)
@@ -61,6 +61,7 @@ def test_repository_returns_all_eligible_candidates_without_prediction_or_commen
     assert "r.free_retention_score IS NOT NULL" in query
     assert "novel_paid_conversion_prediction" not in query
     assert "novel_comment_sentiment" not in query
-    assert "predicted_" not in query
-    assert "positive_count" not in query
+    assert "FROM comment_statistics" in query
+    assert "GROUP BY novel_id" in query
+    assert "positive_count" in query
     assert "LIMIT %s" not in query

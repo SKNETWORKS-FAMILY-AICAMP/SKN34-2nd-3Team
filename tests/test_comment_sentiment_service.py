@@ -3,6 +3,11 @@ import pytest
 from service.comment_sentiment_service import CommentSentimentService
 
 
+def test_reaction_score_shared_definition_marks_zero_analyzed_as_missing():
+    assert CommentSentimentService.reaction_score_from_counts(3, 1, 4) == 50.0
+    assert CommentSentimentService.reaction_score_from_counts(0, 0, 0) is None
+
+
 class FakeRepository:
     def get_novel_comment_sentiment_overview(self, novel_id):
         assert novel_id == 10
