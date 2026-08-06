@@ -124,21 +124,18 @@ class Repository:
 
     def get_author_analysis(
         self, novel_ids: Sequence[int]
-    ) -> tuple[
-        dict[int, float],
-        dict[int, tuple[float | None, float | None]],
-    ]:
-        """Bulk-load stored target and retention scores for author works."""
+    ) -> dict[int, tuple[float | None, float | None, float | None]]:
+        """Bulk-load independent recommendation score components."""
         unique_ids = list(dict.fromkeys(int(novel_id) for novel_id in novel_ids))
         if not unique_ids:
-            return {}, {}
+            return {}
 
         placeholders = ", ".join(["%s"] * len(unique_ids))
         with self._cursor(dictionary=True) as cursor:
             cursor.execute(
                 f"""
-                SELECT n.novel_id, r.recommendation_score,
-                       r.retention_score, r.paid_score
+                SELECT n.novel_id, r.view_scale_score,
+                       r.free_retention_score, r.paid_retention_score
                 FROM novel AS n
                 LEFT JOIN novel_recommendation_score AS r
                   ON r.novel_id = n.novel_id
@@ -147,23 +144,20 @@ class Repository:
                 tuple(unique_ids),
             )
             rows = cursor.fetchall()
-        scores = {
-            int(row["novel_id"]): float(row["recommendation_score"])
-            for row in rows
-            if row.get("recommendation_score") is not None
-        }
-        retention_parts = {
+        return {
             int(row["novel_id"]): (
-                float(row["retention_score"])
-                if row.get("retention_score") is not None
+                float(row["view_scale_score"])
+                if row.get("view_scale_score") is not None
                 else None,
-                float(row["paid_score"])
-                if row.get("paid_score") is not None
+                float(row["free_retention_score"])
+                if row.get("free_retention_score") is not None
+                else None,
+                float(row["paid_retention_score"])
+                if row.get("paid_retention_score") is not None
                 else None,
             )
             for row in rows
         }
-        return scores, retention_parts
 
     def get_episodes(self, novel_id: int) -> list[Episode]:
         with self._cursor(dictionary=True) as cursor:
@@ -345,7 +339,7 @@ class Repository:
                 JOIN novel AS n ON g.genre_id = n.genre_1
                 JOIN novel_recommendation_score AS r ON r.novel_id = n.novel_id
                   AND r.scored_episode_count >= 1
-                  AND r.free_score IS NOT NULL
+                  AND r.free_retention_score IS NOT NULL
                 WHERE n.free = 1
                   AND COALESCE(n.paid_serial, 0) = 0
                   AND COALESCE(n.finish, 0) = 0
@@ -368,26 +362,21 @@ class Repository:
             return cursor.fetchall()
 
     def find_recommendations_by_genre(
-        self, genre_id: int, *, limit: int = 20
+        self, genre_id: int
     ) -> list[dict[str, Any]]:
-        """Return the highest-scoring novels in a genre."""
-        if limit <= 0:
-            raise ValueError("limit must be greater than zero")
+        """Return every eligible novel in a genre for service-side ranking."""
         with self._cursor(dictionary=True) as cursor:
             cursor.execute(
                 """
                 SELECT
-                    n.novel_id, n.author_id, n.title, n.source_url, n.introduction,
+                    n.novel_id, n.author_id, n.title, n.source_url, n.origin_cover_url,
                     COALESCE(a.author_name, '') AS author_name,
                     g.genre_name,
-                    r.free_score AS recommendation_score,
-                    r.free_score, r.paid_score,
-                    r.retention_score, r.reference_view_count,
+                    r.view_scale_score, r.free_retention_score,
+                    r.paid_retention_score, r.reference_view_count,
                     r.view_scale_max, r.view_grade,
                     r.scored_episode_count, r.average_dropout_rate,
                     COALESCE(s.view_count, 0) AS view_count,
-                    COALESCE(s.preference_count, 0) AS preference_count,
-                    COALESCE(s.like_count, 0) AS like_count,
                     GREATEST(
                         COALESCE(s.chapter_count, 0),
                         COALESCE(
@@ -398,27 +387,15 @@ class Repository:
                             ),
                             0
                         )
-                    ) AS chapter_count,
-                    COALESCE(c.positive_count, 0) AS positive_count,
-                    COALESCE(c.negative_count, 0) AS negative_count,
-                    COALESCE(c.neutral_count, 0) AS neutral_count,
-                    COALESCE(c.total_count, 0) AS comment_count,
-                    COALESCE(p.predicted_purchase_count, 0) AS predicted_purchase_count,
-                    COALESCE(p.predicted_conversion_rate, 0) AS predicted_conversion_rate,
-                    COALESCE(p.predicted_paid_dropout_rate, 1) AS predicted_paid_dropout_rate,
-                    COALESCE(p.model_mae, 0) AS conversion_model_mae,
-                    COALESCE(p.training_sample_count, 0) AS conversion_training_samples
+                    ) AS chapter_count
                 FROM novel AS n
                 JOIN novel_genre AS g
                   ON g.genre_id = %s AND g.genre_id = n.genre_1
                 JOIN novel_recommendation_score AS r ON r.novel_id = n.novel_id
                   AND r.scored_episode_count >= 1
-                  AND r.free_score IS NOT NULL
+                  AND r.free_retention_score IS NOT NULL
                 LEFT JOIN novel_author AS a ON a.author_id = n.author_id
                 LEFT JOIN novel_statistics AS s ON s.novel_id = n.novel_id
-                LEFT JOIN novel_comment_sentiment AS c ON c.novel_id = n.novel_id
-                LEFT JOIN novel_paid_conversion_prediction AS p
-                  ON p.novel_id = n.novel_id
                 WHERE n.free = 1
                   AND COALESCE(n.paid_serial, 0) = 0
                   AND COALESCE(n.finish, 0) = 0
@@ -429,13 +406,9 @@ class Repository:
                       WHERE e50.novel_id = n.novel_id
                         AND e50.episode_number >= 30
                   )
-                ORDER BY r.free_score DESC,
-                         r.average_dropout_rate ASC,
-                         r.scored_episode_count DESC,
-                         n.novel_id
-                LIMIT %s
+                ORDER BY n.novel_id
                 """,
-                (genre_id, limit),
+                (genre_id,),
             )
             return cursor.fetchall()
 

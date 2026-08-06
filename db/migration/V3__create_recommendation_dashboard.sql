@@ -1,15 +1,14 @@
 -- Materialized recommendation metrics based on test.ipynb.
 -- Episodes 1-25 and access-type transition edges are excluded. The reference
--- view count sets a 20-point score band and retention ranks within that band.
+-- view count and FREE/PAID retention are stored as independent components.
 
 SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS novel_recommendation_score (
     novel_id INT NOT NULL,
-    recommendation_score DECIMAL(6, 2) NOT NULL,
-    free_score DECIMAL(6, 2),
-    paid_score DECIMAL(6, 2),
-    retention_score DECIMAL(6, 2),
+    view_scale_score DECIMAL(6, 2),
+    free_retention_score DECIMAL(6, 2),
+    paid_retention_score DECIMAL(6, 2),
     reference_view_count INT NOT NULL DEFAULT 0,
     view_scale_max INT NOT NULL DEFAULT 100000,
     view_grade VARCHAR(20) NOT NULL DEFAULT '아주 낮음',
@@ -33,11 +32,11 @@ CREATE TABLE IF NOT EXISTS novel_comment_sentiment (
         FOREIGN KEY (novel_id) REFERENCES novel (novel_id)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-TRUNCATE TABLE novel_recommendation_score;
+DELETE FROM novel_recommendation_score;
 
 INSERT INTO novel_recommendation_score (
-    novel_id, recommendation_score, free_score, paid_score,
-    retention_score, reference_view_count, view_scale_max, view_grade,
+    novel_id, view_scale_score, free_retention_score, paid_retention_score,
+    reference_view_count, view_scale_max, view_grade,
     scored_episode_count, average_dropout_rate, calculated_at
 )
 WITH ordered_episode AS (
@@ -82,7 +81,6 @@ percentile_score AS (
 retention_summary AS (
     SELECT
         novel_id,
-        AVG(episode_score) AS retention_score,
         AVG(CASE WHEN access_type = 'FREE' THEN episode_score END) AS free_retention_score,
         AVG(CASE WHEN access_type = 'PAID' THEN episode_score END) AS paid_retention_score,
         COUNT(*) AS scored_episode_count,
@@ -116,6 +114,7 @@ view_scale AS (
 score_input AS (
     SELECT
         summary.*,
+        mature.view_count IS NOT NULL AS has_reference_view,
         GREATEST(COALESCE(mature.view_count, 0), 0) AS reference_view_count,
         scale.view_scale_max,
         CASE
@@ -157,22 +156,9 @@ graded_score AS (
 )
 SELECT
     novel_id,
-    ROUND(
-        CASE
-            WHEN reference_view_count = 0 THEN 0
-            ELSE LEAST(100, score_floor + COALESCE(free_retention_score, 0) * 0.20)
-        END,
-        2
-    ),
-    ROUND(
-        CASE
-            WHEN reference_view_count = 0 THEN 0
-            ELSE LEAST(100, score_floor + COALESCE(free_retention_score, 0) * 0.20)
-        END,
-        2
-    ),
-    ROUND(paid_retention_score, 2),
+    CASE WHEN has_reference_view THEN ROUND(score_floor, 2) END,
     ROUND(free_retention_score, 2),
+    ROUND(paid_retention_score, 2),
     reference_view_count,
     view_scale_max,
     view_grade,

@@ -76,9 +76,9 @@ def test_find_recommendations_returns_author_id_without_extra_lookup(monkeypatch
     repository = Repository()
     use_cursor(monkeypatch, repository, cursor)
 
-    assert repository.find_recommendations_by_genre(3, limit=12) == []
+    assert repository.find_recommendations_by_genre(3) == []
 
     query, params = cursor.executed[0]
     assert "n.novel_id, n.author_id, n.title" in query
-    assert params == (3, 12)
+    assert params == (3,)
     assert len(cursor.executed) == 1
