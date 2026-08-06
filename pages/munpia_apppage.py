@@ -97,7 +97,7 @@ if "manual_collection_click_token" not in st.session_state:
 if "pending_manual_collection_id" not in st.session_state:
     st.session_state.pending_manual_collection_id = None
 
-genre_options = repository.list_genre_options()
+genre_options = service.list_genre_options()
 genre_labels = {genre_id: genre_name for genre_id, genre_name in genre_options}
 selected_genre_label = st.sidebar.selectbox(
     "카테고리",
@@ -189,7 +189,7 @@ if submitted:
 
         st.session_state.last_changed_novel_id = final_result.novel_id
         st.session_state.last_change_type = final_result.change_type
-        st.session_state.collection_page = repository.find_page(
+        st.session_state.collection_page = service.find_page(
             final_result.novel_id,
             page_size,
         )
@@ -216,7 +216,7 @@ if submitted:
 st.divider()
 st.subheader("수집된 작품 목록")
 
-rows, total_rows = repository.list_novels(
+rows, total_rows = service.list_novels(
     st.session_state.collection_page,
     page_size,
     genre_id=selected_genre_id,
@@ -229,7 +229,7 @@ rows, total_rows = repository.list_novels(
 total_pages = max(1, (total_rows + page_size - 1) // page_size)
 if st.session_state.collection_page > total_pages:
     st.session_state.collection_page = total_pages
-    rows, total_rows = repository.list_novels(
+    rows, total_rows = service.list_novels(
         st.session_state.collection_page,
         page_size,
         genre_id=selected_genre_id,

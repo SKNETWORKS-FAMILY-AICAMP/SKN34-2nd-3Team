@@ -63,7 +63,10 @@ def test_novel_table_displays_serial_status_in_finish_column_position():
 
 def test_page_builds_deduplicated_category_and_sidebar_filters():
     source = PAGE.read_text(encoding="utf-8")
-    assert "repository.list_genre_options()" in source
+    assert "service.list_genre_options()" in source
+    assert "repository.list_genre_options()" not in source
+    assert "repository.find_page(" not in source
+    assert "repository.list_novels(" not in source
     assert "selected_genre_label = st.sidebar.selectbox(" in source
     assert '    "카테고리",' in source
     assert 'st.sidebar.selectbox("연재 상태"' in source
