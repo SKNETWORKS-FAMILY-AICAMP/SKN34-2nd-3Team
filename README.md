@@ -40,14 +40,14 @@
 ## 🧰 기술 스택
 
 
-| 구분 | 기술 |
-| :--- | :--- |
-| Language | ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white) |
-| Web UI | ![Streamlit 1.60.0](https://img.shields.io/badge/Streamlit-1.60.0-FF4B4B?style=flat-square&logo=streamlit&logoColor=white) ![Streamlit Extras 1.6.0](https://img.shields.io/badge/Streamlit_Extras-1.6.0-FF4B4B?style=flat-square&logo=streamlit&logoColor=white) |
+| 구분               | 기술                                                                                                                                                                                                                                                                                                                                  |
+| :---------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Language         | ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)                                                                                                                                                                                                                       |
+| Web UI           | ![Streamlit 1.60.0](https://img.shields.io/badge/Streamlit-1.60.0-FF4B4B?style=flat-square&logo=streamlit&logoColor=white) ![Streamlit Extras 1.6.0](https://img.shields.io/badge/Streamlit_Extras-1.6.0-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)                                                                   |
 | Machine Learning | ![scikit-learn 1.9.0](https://img.shields.io/badge/scikit--learn-1.9.0-F7931E?style=flat-square&logo=scikitlearn&logoColor=white) ![PyTorch 2.13.0](https://img.shields.io/badge/PyTorch-2.13.0-EE4C2C?style=flat-square&logo=pytorch&logoColor=white) ![XGBoost](https://img.shields.io/badge/XGBoost-ML-189FDD?style=flat-square) |
-| Database | ![MySQL 8.4](https://img.shields.io/badge/MySQL-8.4-4479A1?style=flat-square&logo=mysql&logoColor=white) |
-| Dataset | ![Hugging Face Hub 1.26.0](https://img.shields.io/badge/Hugging_Face_Hub-1.26.0-FFD21E?style=flat-square&logo=huggingface&logoColor=black) ![CSV](https://img.shields.io/badge/CSV-Data-217346?style=flat-square&logo=files&logoColor=white) |
-| Infrastructure | ![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white) |
+| Database         | ![MySQL 8.4](https://img.shields.io/badge/MySQL-8.4-4479A1?style=flat-square&logo=mysql&logoColor=white)                                                                                                                                                                                                                            |
+| Dataset          | ![Hugging Face Hub 1.26.0](https://img.shields.io/badge/Hugging_Face_Hub-1.26.0-FFD21E?style=flat-square&logo=huggingface&logoColor=black) ![CSV](https://img.shields.io/badge/CSV-Data-217346?style=flat-square&logo=files&logoColor=white)                                                                                        |
+| Infrastructure   | ![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)                                                                                                                                                                                                                 |
 
 
 ## 🗂️ 폴더 구조
@@ -94,20 +94,7 @@ SKN34-2nd-3Team/
 
 ## 📌 수행결과
 
-## 💭 한 줄 회고
 
-> 윤성호  
-> 이번 프로젝트를 진행하며 GitHub의 프로젝트, 이슈, 포크, PR 등 다양한 기능을 직접 활용해 협업하는 과정을 경험할 수 있어서 뜻깊었다. 다만 이슈 작성 기준과 PR 템플릿이 미리 정해져 있지 않아 작업 내용을 공유하고 관리하는 과정에서 다소 아쉬움이 있었다. 또한 업무를 분배할 때 프론트엔드, 백엔드, DB, AI 모델 학습 및 연구, 데이터 수집처럼 역할과 책임을 명확히 구분하지 않고 모듈별 구현과 연구 작업을 중심으로 나누다 보니, 팀원들의 작업이 겹치거나 일부 업무가 원활하게 진행되지 못했다. 다음 프로젝트에서는 협업 규칙과 업무 영역을 초기에 명확히 정한다면 더욱 체계적이고 효율적으로 프로젝트를 진행할 수 있을 것 같다.
-
-> 전진환  
-> 이번 프로젝트에서는 웹소설 데이터를 직접 수집하고 전처리한 뒤, 댓글 감정분석 모델을 파인튜닝해 실제 서비스에 적용하는 작업을 담당했다. 처음에는 방대한 데이터와 예상보다 많은 오류 때문에 막막하기도 했지만, 하나씩 문제를 해결하고 결과가 화면에 실제로 반영되는 모습을 보며 큰 성취감을 느꼈다. 특히 단순히 모델을 만드는 것보다 데이터의 상태를 꼼꼼히 확인하고, 팀원들과 계속 의견을 맞춰 가는 과정이 중요하다는 점을 배울 수 있었다. 짧은 기간 안에 여러 작업을 동시에 진행해 아쉬움도 남았지만, 시행착오를 겪으며 끝까지 기능을 완성해 낸 경험 자체가 의미 있었고, 다음 프로젝트에서는 이번에 부족했던 부분을 보완해 더 완성도 있게 진행해 보고 싶다.
-
-> 김현지  
-> 조회수 예측을 위한 머신러닝과 딥러닝 모델을 연구하고 다양한 모델과 옵션을 조합해 최적의 모델을 찾는 작업에서 많은 시행착오를 겪었지만, 그 과정을 통해 배운 점이 많았던 프로젝트였다. 특히 실제 사이트에서 추출한 웹소설 데이터를 다뤄 Streamlit 웹 대시보드로 시각화하여 편집부의 의사결정을 돕는 서비스로 완성해 보며, 데이터 분석과 서비스 개발의 과정을 보다 더 잘 이해하게 되었다.
-
-> 최대원  
-> 이번 프로젝트에 관해 팀원들과 의견을 나누고 목표를 정하는 등 유익한 시간이 되었다.
-> 특히 데이터를 크롤링하고 분석하고 재정리하는 과정은 도움이 되었다. 다만, 정제되지 않은 데이터를 기반으로 타깃을 주제에 맞게 설정하는 과정과 문자를 분석해서 영향력을 넣으려는 과정이 어려웠다. 하물며 머신러닝과 딥러닝으로 모델 비교에서 정확도까지 떨어져 아쉬움이 남는다. 개인적으론 상업성을 목표로 만들어 봤다는 것에서 좋은 경험이 되었다.
 
 ## ✏️ 향후 개선 계획
 
@@ -137,4 +124,21 @@ python bootstrap.py
 ```bash
 streamlit run main.py
 ```
+
+## 💭 한 줄 회고
+
+> 윤성호  
+> 이번 프로젝트를 진행하며 GitHub의 프로젝트, 이슈, 포크, PR 등 다양한 기능을 직접 활용해 협업하는 과정을 경험할 수 있어서 뜻깊었다. 다만 이슈 작성 기준과 PR 템플릿이 미리 정해져 있지 않아 작업 내용을 공유하고 관리하는 과정에서 다소 아쉬움이 있었다. 또한 업무를 분배할 때 프론트엔드, 백엔드, DB, AI 모델 학습 및 연구, 데이터 수집처럼 역할과 책임을 명확히 구분하지 않고 모듈별 구현과 연구 작업을 중심으로 나누다 보니, 팀원들의 작업이 겹치거나 일부 업무가 원활하게 진행되지 못했다. 다음 프로젝트에서는 협업 규칙과 업무 영역을 초기에 명확히 정한다면 더욱 체계적이고 효율적으로 프로젝트를 진행할 수 있을 것 같다.
+
+> 전진환  
+> 이번 프로젝트에서는 웹소설 데이터를 직접 수집하고 전처리한 뒤, 댓글 감정분석 모델을 파인튜닝해 실제 서비스에 적용하는 작업을 담당했다. 처음에는 방대한 데이터와 예상보다 많은 오류 때문에 막막하기도 했지만, 하나씩 문제를 해결하고 결과가 화면에 실제로 반영되는 모습을 보며 큰 성취감을 느꼈다. 특히 단순히 모델을 만드는 것보다 데이터의 상태를 꼼꼼히 확인하고, 팀원들과 계속 의견을 맞춰 가는 과정이 중요하다는 점을 배울 수 있었다. 짧은 기간 안에 여러 작업을 동시에 진행해 아쉬움도 남았지만, 시행착오를 겪으며 끝까지 기능을 완성해 낸 경험 자체가 의미 있었고, 다음 프로젝트에서는 이번에 부족했던 부분을 보완해 더 완성도 있게 진행해 보고 싶다.
+
+> 김현지  
+> 조회수 예측을 위한 머신러닝과 딥러닝 모델을 연구하고 다양한 모델과 옵션을 조합해 최적의 모델을 찾는 작업에서 많은 시행착오를 겪었지만, 그 과정을 통해 배운 점이 많았던 프로젝트였다. 특히 실제 사이트에서 추출한 웹소설 데이터를 다뤄 Streamlit 웹 대시보드로 시각화하여 편집부의 의사결정을 돕는 서비스로 완성해 보며, 데이터 분석과 서비스 개발의 과정을 보다 더 잘 이해하게 되었다.
+
+> 최대원  
+> 이번 프로젝트에 관해 팀원들과 의견을 나누고 목표를 정하는 등 유익한 시간이 되었다.  
+> 특히 데이터를 크롤링하고 분석하고 재정리하는 과정은 도움이 되었다. 다만, 정제되지 않은 데이터를 기반으로 타깃을 주제에 맞게 설정하는 과정과 문자를 분석해서 영향력을 넣으려는 과정이 어려웠다. 하물며 머신러닝과 딥러닝으로 모델 비교에서 정확도까지 떨어져 아쉬움이 남는다. 개인적으론 상업성을 목표로 만들어 봤다는 것에서 좋은 경험이 되었다.
+
+
 
