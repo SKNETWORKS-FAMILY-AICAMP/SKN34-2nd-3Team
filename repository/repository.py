@@ -426,6 +426,295 @@ class Repository:
             cursor.close()
         return changed
 
+
+    def get_novel_comment_sentiment_overview(
+        self,
+        novel_id: int,
+    ) -> dict[str, Any]:
+        """Return one novel-level comment sentiment overview."""
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    (
+                        SELECT COUNT(*)
+                        FROM comment AS c
+                        WHERE c.novel_id = %s
+                    ) AS stored_comment_count,
+                    COUNT(cs.comment_id) AS analyzed_comment_count,
+                    COUNT(DISTINCT cs.episode_id) AS analyzed_episode_count,
+                    COALESCE(
+                        SUM(cs.predicted_label = 'positive'),
+                        0
+                    ) AS positive_count,
+                    COALESCE(
+                        SUM(cs.predicted_label = 'neutral'),
+                        0
+                    ) AS neutral_count,
+                    COALESCE(
+                        SUM(cs.predicted_label = 'negative'),
+                        0
+                    ) AS negative_count,
+                    AVG(cs.confidence) AS average_confidence,
+                    MAX(cs.analyzed_at) AS last_analyzed_at,
+                    MAX(cs.model_version) AS model_version,
+                    (
+                        SELECT MAX(c2.collected_at)
+                        FROM comment AS c2
+                        WHERE c2.novel_id = %s
+                    ) AS last_collected_at
+                FROM comment_statistics AS cs
+                WHERE cs.novel_id = %s
+                """,
+                (novel_id, novel_id, novel_id),
+            )
+            row = cursor.fetchone()
+
+        return dict(row or {})
+
+    def get_episode_comment_sentiment_summaries(
+        self,
+        novel_id: int,
+    ) -> list[dict[str, Any]]:
+        """Return every episode with stored/analyzed comment aggregates."""
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    e.episode_id,
+                    e.novel_id,
+                    e.episode_number,
+                    e.episode_title,
+                    e.published_at,
+                    e.access_type,
+                    e.view_count,
+                    e.like_count,
+                    COALESCE(e.comment_count, 0)
+                        AS source_comment_count,
+                    COALESCE(ca.stored_comment_count, 0)
+                        AS stored_comment_count,
+                    COALESCE(sa.analyzed_comment_count, 0)
+                        AS analyzed_comment_count,
+                    COALESCE(sa.positive_count, 0)
+                        AS positive_count,
+                    COALESCE(sa.neutral_count, 0)
+                        AS neutral_count,
+                    COALESCE(sa.negative_count, 0)
+                        AS negative_count,
+                    sa.average_confidence,
+                    ca.last_collected_at,
+                    sa.last_analyzed_at,
+                    sa.model_version
+                FROM episode AS e
+                LEFT JOIN (
+                    SELECT
+                        c.episode_id,
+                        COUNT(*) AS stored_comment_count,
+                        MAX(c.collected_at) AS last_collected_at
+                    FROM comment AS c
+                    WHERE c.novel_id = %s
+                    GROUP BY c.episode_id
+                ) AS ca
+                    ON ca.episode_id = e.episode_id
+                LEFT JOIN (
+                    SELECT
+                        cs.episode_id,
+                        COUNT(*) AS analyzed_comment_count,
+                        SUM(cs.predicted_label = 'positive')
+                            AS positive_count,
+                        SUM(cs.predicted_label = 'neutral')
+                            AS neutral_count,
+                        SUM(cs.predicted_label = 'negative')
+                            AS negative_count,
+                        AVG(cs.confidence) AS average_confidence,
+                        MAX(cs.analyzed_at) AS last_analyzed_at,
+                        MAX(cs.model_version) AS model_version
+                    FROM comment_statistics AS cs
+                    WHERE cs.novel_id = %s
+                    GROUP BY cs.episode_id
+                ) AS sa
+                    ON sa.episode_id = e.episode_id
+                WHERE e.novel_id = %s
+                ORDER BY e.episode_number, e.episode_id
+                """,
+                (novel_id, novel_id, novel_id),
+            )
+            rows = cursor.fetchall()
+
+        return [dict(row) for row in rows]
+
+    def get_episode_comments_with_sentiment(
+        self,
+        episode_id: int,
+        *,
+        label: str = "all",
+        sort_by: str = "latest",
+        analyzed_only: bool = False,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """Return one episode's comments with optional V5 sentiment data."""
+        if limit <= 0 or limit > 5000:
+            raise ValueError("limit must be between 1 and 5000")
+
+        where = ["c.episode_id = %s"]
+        params: list[Any] = [episode_id]
+
+        valid_labels = {"positive", "neutral", "negative"}
+        if label in valid_labels:
+            where.append("cs.predicted_label = %s")
+            params.append(label)
+        elif label == "unanalyzed":
+            where.append("cs.comment_id IS NULL")
+        elif label != "all":
+            raise ValueError(f"unsupported sentiment label: {label}")
+
+        if analyzed_only:
+            where.append("cs.comment_id IS NOT NULL")
+
+        order_by = {
+            "latest": "c.created_at DESC, c.comment_id DESC",
+            "oldest": "c.created_at ASC, c.comment_id ASC",
+            "likes": (
+                "COALESCE(c.like_count, 0) DESC, "
+                "c.created_at DESC, c.comment_id DESC"
+            ),
+            "dislikes": (
+                "COALESCE(c.dislike_count, 0) DESC, "
+                "c.created_at DESC, c.comment_id DESC"
+            ),
+            "confidence": (
+                "cs.confidence DESC, c.created_at DESC, c.comment_id DESC"
+            ),
+            "negative_first": (
+                "(cs.predicted_label = 'negative') DESC, "
+                "cs.confidence DESC, COALESCE(c.like_count, 0) DESC, "
+                "c.created_at DESC"
+            ),
+        }.get(sort_by)
+        if order_by is None:
+            raise ValueError(f"unsupported comment sort: {sort_by}")
+
+        params.append(limit)
+        query = f"""
+            SELECT
+                c.comment_id,
+                c.novel_id,
+                c.episode_id,
+                c.reply_level,
+                c.content_type,
+                c.comment_text,
+                c.like_count,
+                c.dislike_count,
+                c.created_at,
+                c.collected_at,
+                '' AS commenter_nickname,
+                0 AS is_novel_author,
+                cs.predicted_label,
+                cs.negative_score,
+                cs.neutral_score,
+                cs.positive_score,
+                cs.confidence,
+                cs.model_version,
+                cs.comment_text_hash,
+                cs.analyzed_at
+            FROM comment AS c
+            LEFT JOIN comment_statistics AS cs
+                ON cs.comment_id = c.comment_id
+            WHERE {" AND ".join(where)}
+            ORDER BY {order_by}
+            LIMIT %s
+        """
+
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+
+        return [dict(row) for row in rows]
+
+    def get_representative_episode_comments(
+        self,
+        episode_id: int,
+        *,
+        limit: int = 5,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Return representative positive, negative, ambiguous and debated comments."""
+        if limit <= 0 or limit > 50:
+            raise ValueError("limit must be between 1 and 50")
+
+        select_sql = """
+            SELECT
+                c.comment_id,
+                c.comment_text,
+                c.like_count,
+                c.dislike_count,
+                c.created_at,
+                cs.predicted_label,
+                cs.confidence
+            FROM comment AS c
+            JOIN comment_statistics AS cs
+                ON cs.comment_id = c.comment_id
+            WHERE c.episode_id = %s
+        """
+
+        queries = {
+            "positive": (
+                select_sql
+                + """
+                  AND cs.predicted_label = 'positive'
+                ORDER BY
+                    COALESCE(c.like_count, 0) DESC,
+                    cs.confidence DESC,
+                    c.comment_id DESC
+                LIMIT %s
+                """
+            ),
+            "negative": (
+                select_sql
+                + """
+                  AND cs.predicted_label = 'negative'
+                ORDER BY
+                    COALESCE(c.like_count, 0) DESC,
+                    cs.confidence DESC,
+                    c.comment_id DESC
+                LIMIT %s
+                """
+            ),
+            "ambiguous": (
+                select_sql
+                + """
+                ORDER BY
+                    cs.confidence ASC,
+                    COALESCE(c.like_count, 0) DESC,
+                    c.comment_id DESC
+                LIMIT %s
+                """
+            ),
+            "controversy": (
+                select_sql
+                + """
+                ORDER BY
+                    (
+                        COALESCE(c.like_count, 0)
+                        + COALESCE(c.dislike_count, 0)
+                    ) DESC,
+                    LEAST(
+                        COALESCE(c.like_count, 0),
+                        COALESCE(c.dislike_count, 0)
+                    ) DESC,
+                    c.comment_id DESC
+                LIMIT %s
+                """
+            ),
+        }
+
+        result: dict[str, list[dict[str, Any]]] = {}
+        with self._cursor(dictionary=True) as cursor:
+            for key, query in queries.items():
+                cursor.execute(query, (episode_id, limit))
+                result[key] = [dict(row) for row in cursor.fetchall()]
+
+        return result
+
     _TABLE_COLUMNS: dict[str, tuple[str, ...]] = {
         "tag": ("tag_id", "tag_name"),
         "novel_genre": ("genre_id", "genre_name"),

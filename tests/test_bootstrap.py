@@ -115,7 +115,13 @@ def test_existing_schema_allows_empty_table_only_for_header_only_csv(
         tmp_path,
     )
 
-    assert "Database schema and CSV data already exist" in capsys.readouterr().out
+    output = capsys.readouterr().out
+
+    assert "Core database schema and CSV data already exist" in output
+    assert (
+        "Database schema, core CSV data, and comment sentiment data are ready"
+        in output
+    )
     assert connection.closed is True
 
 
@@ -158,9 +164,10 @@ def test_post_migration_validation_rejects_silent_zero_row_import(
         )
 
     assert [migration.name for migration in migrations] == [
-        "V1__create_initial_schema.sql",
-        "V2__load_csv_data.sql",
-        "V3__create_recommendation_dashboard.sql",
+    "V1__create_initial_schema.sql",
+    "V2__load_csv_data.sql",
+    "V3__create_recommendation_dashboard.sql",
+    "V4__create_paid_conversion_prediction.sql",
     ]
 
 
