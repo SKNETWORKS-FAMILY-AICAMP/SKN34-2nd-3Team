@@ -13,6 +13,8 @@ if TYPE_CHECKING:
     from service.collection_service import CollectionService
     from service.novel_service import NovelService
     from service.novel_prediction_service import NovelPredictionService 
+    from service.paid_conversion_model_service import PaidConversionModelService
+    from service.recommendation_metric_service import RecommendationMetricService
     from service.recommendation_service import RecommendationService
 
 def __getattr__(name: str):
@@ -31,6 +33,14 @@ def __getattr__(name: str):
     if name == "RecommendationService":
         from service.recommendation_service import RecommendationService
         return RecommendationService
+
+    if name == "RecommendationMetricService":
+        from service.recommendation_metric_service import RecommendationMetricService
+        return RecommendationMetricService
+
+    if name == "PaidConversionModelService":
+        from service.paid_conversion_model_service import PaidConversionModelService
+        return PaidConversionModelService
         
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -39,6 +49,8 @@ __all__ = [
     "CollectionService",
     "NovelPredictionService", 
     "RecommendationService",
+    "RecommendationMetricService",
+    "PaidConversionModelService",
     "NovelServiceError",
     "InvalidNovelInputError",
     "CollectionError",
