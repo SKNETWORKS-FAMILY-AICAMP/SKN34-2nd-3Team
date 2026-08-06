@@ -71,6 +71,58 @@ def test_get_primary_genre_name_returns_none_when_missing(monkeypatch):
     assert repository.get_primary_genre_name(7) is None
 
 
+def test_comment_sentiment_overview_counts_only_model_eligible_comments(
+    monkeypatch,
+):
+    cursor = ReadCursor(row={})
+    repository = Repository()
+    use_cursor(monkeypatch, repository, cursor)
+
+    repository.get_novel_comment_sentiment_overview(7)
+
+    query, params = cursor.executed[0]
+    assert "AS eligible_comment_count" in query
+    assert "JOIN episode AS e ON e.episode_id = c.episode_id" in query
+    assert "access_type = 'FREE'" in query
+    assert "c.content_type = 'TEXT'" in query
+    assert "c.reply_level = 0" in query
+    assert "c.is_novel_author = FALSE" in query
+    assert "TRIM(c.comment_text) <> ''" in query
+    assert params == (7, 7, 7, 7)
+
+
+def test_episode_sentiment_summaries_count_model_eligible_comments(monkeypatch):
+    cursor = ReadCursor(rows=[])
+    repository = Repository()
+    use_cursor(monkeypatch, repository, cursor)
+
+    repository.get_episode_comment_sentiment_summaries(7)
+
+    query, params = cursor.executed[0]
+    assert "AS eligible_comment_count" in query
+    assert "e.access_type = 'FREE'" in query
+    assert "c.content_type = 'TEXT'" in query
+    assert "c.reply_level = 0" in query
+    assert "c.is_novel_author = FALSE" in query
+    assert "TRIM(c.comment_text) <> ''" in query
+    assert params == (7, 7, 7)
+
+
+def test_episode_comment_list_reads_actual_commenter_fields(monkeypatch):
+    cursor = ReadCursor(rows=[])
+    repository = Repository()
+    use_cursor(monkeypatch, repository, cursor)
+
+    repository.get_episode_comments_with_sentiment(11)
+
+    query, params = cursor.executed[0]
+    assert "c.commenter_nickname" in query
+    assert "c.is_novel_author" in query
+    assert "'' AS commenter_nickname" not in query
+    assert "0 AS is_novel_author" not in query
+    assert params == (11, 500)
+
+
 def test_find_recommendations_returns_author_id_without_extra_lookup(monkeypatch):
     cursor = ReadCursor(rows=[])
     repository = Repository()

@@ -44,8 +44,10 @@ def _source_presence(default: bool = True) -> dict[str, bool]:
 def test_csv_data_presence_distinguishes_header_only_and_data_rows(tmp_path):
     for table, header in bootstrap.ALL_HEADERS.items():
         rows = [",".join(header)]
+
         if table != "novel_ai_evaluation":
             rows.append(",".join(["value"] * len(header)))
+
         (tmp_path / f"{table}.csv").write_text(
             "\n".join(rows) + "\n",
             encoding="utf-8",
@@ -64,6 +66,7 @@ def test_existing_schema_rejects_empty_table_backed_by_nonempty_csv(
     connection = BootstrapConnection()
     counts = _table_counts()
     counts["novel"] = 0
+
     source_presence = _source_presence()
     source_presence["novel_ai_evaluation"] = False
 
@@ -82,7 +85,10 @@ def test_existing_schema_rejects_empty_table_backed_by_nonempty_csv(
     ):
         bootstrap.initialize_database(
             tmp_path / ".env",
-            {"DB_NAME": "test", "DB_PASSWORD": "password"},
+            {
+                "DB_NAME": "test",
+                "DB_PASSWORD": "password",
+            },
             tmp_path,
         )
 
@@ -97,6 +103,7 @@ def test_existing_schema_allows_empty_table_only_for_header_only_csv(
     connection = BootstrapConnection()
     counts = _table_counts()
     counts["novel_ai_evaluation"] = 0
+
     source_presence = _source_presence()
     source_presence["novel_ai_evaluation"] = False
 
@@ -111,11 +118,20 @@ def test_existing_schema_allows_empty_table_only_for_header_only_csv(
 
     bootstrap.initialize_database(
         tmp_path / ".env",
-        {"DB_NAME": "test", "DB_PASSWORD": "password"},
+        {
+            "DB_NAME": "test",
+            "DB_PASSWORD": "password",
+        },
         tmp_path,
     )
 
-    assert "Database schema and CSV data already exist" in capsys.readouterr().out
+    output = capsys.readouterr().out
+
+    assert "Core database schema and CSV data already exist" in output
+    assert (
+        "Database schema, core CSV data, and comment sentiment data are ready"
+        in output
+    )
     assert connection.closed is True
 
 
@@ -125,8 +141,10 @@ def test_post_migration_validation_rejects_silent_zero_row_import(
 ):
     connection = BootstrapConnection()
     count_results = iter([{}, _table_counts(default=0)])
+
     source_presence = _source_presence()
     source_presence["novel_ai_evaluation"] = False
+
     migrations: list[Path] = []
 
     monkeypatch.setattr(bootstrap, "_invalid_dataset_files", lambda _: [])
@@ -153,7 +171,10 @@ def test_post_migration_validation_rejects_silent_zero_row_import(
     ):
         bootstrap.initialize_database(
             tmp_path / ".env",
-            {"DB_NAME": "test", "DB_PASSWORD": "password"},
+            {
+                "DB_NAME": "test",
+                "DB_PASSWORD": "password",
+            },
             tmp_path,
         )
 
@@ -166,20 +187,22 @@ def test_post_migration_validation_rejects_silent_zero_row_import(
 
 
 def test_load_data_uses_lf_for_every_csv():
-    sql = (bootstrap.MIGRATION_DIR / "V2__load_csv_data.sql").read_text(
-        encoding="utf-8"
-    )
+    sql = (
+        bootstrap.MIGRATION_DIR / "V2__load_csv_data.sql"
+    ).read_text(encoding="utf-8")
 
     load_count = sql.count("LOAD DATA INFILE")
+
     assert load_count == len(bootstrap.ALL_HEADERS)
     assert sql.count(r"LINES TERMINATED BY '\n'") == load_count
     assert r"LINES TERMINATED BY '\r\n'" not in sql
 
 
 def test_comment_import_matches_current_comment_csv_shape():
-    sql = (bootstrap.MIGRATION_DIR / "V2__load_csv_data.sql").read_text(
-        encoding="utf-8"
-    )
+    sql = (
+        bootstrap.MIGRATION_DIR / "V2__load_csv_data.sql"
+    ).read_text(encoding="utf-8")
+
     comment_sql = sql[sql.index("CREATE TABLE comment_import") :]
 
     for column in (
@@ -204,7 +227,11 @@ def test_prepare_application_runs_preanalysis_after_database_initialization(
     capsys,
 ):
     env_file = tmp_path / "custom.env"
-    env_file.write_text("DB_PASSWORD=secret\nDB_NAME=custom_db\n", encoding="utf-8")
+    env_file.write_text(
+        "DB_PASSWORD=secret\nDB_NAME=custom_db\n",
+        encoding="utf-8",
+    )
+
     calls = []
     factory_ids = []
 
@@ -217,21 +244,36 @@ def test_prepare_application_runs_preanalysis_after_database_initialization(
         bootstrap,
         "start_mysql",
         lambda loaded_env_file, env: calls.append(
-            ("start", loaded_env_file, env["DB_NAME"])
-        ) or "container-id",
+            (
+                "start",
+                loaded_env_file,
+                env["DB_NAME"],
+            )
+        )
+        or "container-id",
     )
     monkeypatch.setattr(
         bootstrap,
         "wait_for_mysql",
         lambda container_id, env, timeout: calls.append(
-            ("wait", container_id, env["DB_NAME"], timeout)
+            (
+                "wait",
+                container_id,
+                env["DB_NAME"],
+                timeout,
+            )
         ),
     )
     monkeypatch.setattr(
         bootstrap,
         "initialize_database",
         lambda loaded_env_file, env, data_dir: calls.append(
-            ("initialize", loaded_env_file, env["DB_NAME"], data_dir)
+            (
+                "initialize",
+                loaded_env_file,
+                env["DB_NAME"],
+                data_dir,
+            )
         ),
     )
 
@@ -248,16 +290,33 @@ def test_prepare_application_runs_preanalysis_after_database_initialization(
 
         def train_and_predict_all(self):
             calls.append(("paid",))
+
             return type(
                 "Result",
                 (),
-                {"trained_count": 123, "candidate_count": 45, "model_mae": 0.06789},
+                {
+                    "trained_count": 123,
+                    "candidate_count": 45,
+                    "model_mae": 0.06789,
+                },
             )()
 
-    monkeypatch.setattr(bootstrap, "RecommendationMetricService", RecommendationService)
-    monkeypatch.setattr(bootstrap, "PaidConversionModelService", PaidService)
+    monkeypatch.setattr(
+        bootstrap,
+        "RecommendationMetricService",
+        RecommendationService,
+    )
+    monkeypatch.setattr(
+        bootstrap,
+        "PaidConversionModelService",
+        PaidService,
+    )
 
-    bootstrap.prepare_application(env_file, tmp_path / "data", mysql_timeout=7)
+    bootstrap.prepare_application(
+        env_file,
+        tmp_path / "data",
+        mysql_timeout=7,
+    )
 
     assert [call[0] for call in calls] == [
         "download",
@@ -267,27 +326,44 @@ def test_prepare_application_runs_preanalysis_after_database_initialization(
         "recommendation",
         "paid",
     ]
+
     assert factory_ids[0] == factory_ids[1]
+
     assert (
         "trained=123 candidates=45 conversion_mae=0.0679"
         in capsys.readouterr().out
     )
 
 
-def test_prepare_application_shared_factory_uses_custom_environment(monkeypatch, tmp_path):
+def test_prepare_application_shared_factory_uses_custom_environment(
+    monkeypatch,
+    tmp_path,
+):
     env_file = tmp_path / "custom.env"
     env_file.write_text(
-        "DB_HOST=custom-host\nMYSQL_PORT=4407\nDB_USER=custom-user\n"
-        "DB_PASSWORD=custom-password\nDB_NAME=custom-db\n",
+        "DB_HOST=custom-host\n"
+        "MYSQL_PORT=4407\n"
+        "DB_USER=custom-user\n"
+        "DB_PASSWORD=custom-password\n"
+        "DB_NAME=custom-db\n",
         encoding="utf-8",
     )
+
     received_envs = []
     service_factories = []
 
     monkeypatch.setattr(bootstrap, "download_dataset", lambda *_: None)
-    monkeypatch.setattr(bootstrap, "start_mysql", lambda *_: "container-id")
+    monkeypatch.setattr(
+        bootstrap,
+        "start_mysql",
+        lambda *_: "container-id",
+    )
     monkeypatch.setattr(bootstrap, "wait_for_mysql", lambda *_: None)
-    monkeypatch.setattr(bootstrap, "initialize_database", lambda *_: None)
+    monkeypatch.setattr(
+        bootstrap,
+        "initialize_database",
+        lambda *_: None,
+    )
     monkeypatch.setattr(
         bootstrap,
         "_connect",
@@ -307,27 +383,57 @@ def test_prepare_application_shared_factory_uses_custom_environment(monkeypatch,
 
         def train_and_predict_all(self):
             service_factories[-1]()
+
             return type(
                 "Result",
                 (),
-                {"trained_count": 1, "candidate_count": 2, "model_mae": 0.25},
+                {
+                    "trained_count": 1,
+                    "candidate_count": 2,
+                    "model_mae": 0.25,
+                },
             )()
 
-    monkeypatch.setattr(bootstrap, "RecommendationMetricService", Service)
-    monkeypatch.setattr(bootstrap, "PaidConversionModelService", PaidService)
+    monkeypatch.setattr(
+        bootstrap,
+        "RecommendationMetricService",
+        Service,
+    )
+    monkeypatch.setattr(
+        bootstrap,
+        "PaidConversionModelService",
+        PaidService,
+    )
 
-    bootstrap.prepare_application(env_file, tmp_path / "data")
+    bootstrap.prepare_application(
+        env_file,
+        tmp_path / "data",
+    )
 
     assert service_factories[0] is service_factories[1]
-    assert [env["DB_NAME"] for env in received_envs] == ["custom-db", "custom-db"]
-    assert all(env["DB_HOST"] == "custom-host" for env in received_envs)
+
+    assert [env["DB_NAME"] for env in received_envs] == [
+        "custom-db",
+        "custom-db",
+    ]
+
+    assert all(
+        env["DB_HOST"] == "custom-host"
+        for env in received_envs
+    )
 
 
 @pytest.mark.parametrize(
     ("failing_service", "expected_message"),
     [
-        ("recommendation", "RecommendationMetricService.refresh_all failed"),
-        ("paid", "PaidConversionModelService.train_and_predict_all failed"),
+        (
+            "recommendation",
+            "RecommendationMetricService.refresh_all failed",
+        ),
+        (
+            "paid",
+            "PaidConversionModelService.train_and_predict_all failed",
+        ),
     ],
 )
 def test_prepare_application_wraps_preanalysis_failure_with_cause(
@@ -337,13 +443,25 @@ def test_prepare_application_wraps_preanalysis_failure_with_cause(
     expected_message,
 ):
     env_file = tmp_path / "custom.env"
-    env_file.write_text("DB_PASSWORD=secret\nDB_NAME=test\n", encoding="utf-8")
+    env_file.write_text(
+        "DB_PASSWORD=secret\nDB_NAME=test\n",
+        encoding="utf-8",
+    )
+
     original = ValueError("analysis exploded")
 
     monkeypatch.setattr(bootstrap, "download_dataset", lambda *_: None)
-    monkeypatch.setattr(bootstrap, "start_mysql", lambda *_: "container-id")
+    monkeypatch.setattr(
+        bootstrap,
+        "start_mysql",
+        lambda *_: "container-id",
+    )
     monkeypatch.setattr(bootstrap, "wait_for_mysql", lambda *_: None)
-    monkeypatch.setattr(bootstrap, "initialize_database", lambda *_: None)
+    monkeypatch.setattr(
+        bootstrap,
+        "initialize_database",
+        lambda *_: None,
+    )
 
     class RecommendationService:
         def __init__(self, connection_factory):
@@ -360,16 +478,35 @@ def test_prepare_application_wraps_preanalysis_failure_with_cause(
         def train_and_predict_all(self):
             if failing_service == "paid":
                 raise original
+
             return type(
                 "Result",
                 (),
-                {"trained_count": 1, "candidate_count": 2, "model_mae": 0.25},
+                {
+                    "trained_count": 1,
+                    "candidate_count": 2,
+                    "model_mae": 0.25,
+                },
             )()
 
-    monkeypatch.setattr(bootstrap, "RecommendationMetricService", RecommendationService)
-    monkeypatch.setattr(bootstrap, "PaidConversionModelService", PaidService)
+    monkeypatch.setattr(
+        bootstrap,
+        "RecommendationMetricService",
+        RecommendationService,
+    )
+    monkeypatch.setattr(
+        bootstrap,
+        "PaidConversionModelService",
+        PaidService,
+    )
 
-    with pytest.raises(bootstrap.BootstrapError, match=expected_message) as caught:
-        bootstrap.prepare_application(env_file, tmp_path / "data")
+    with pytest.raises(
+        bootstrap.BootstrapError,
+        match=expected_message,
+    ) as caught:
+        bootstrap.prepare_application(
+            env_file,
+            tmp_path / "data",
+        )
 
     assert caught.value.__cause__ is original
