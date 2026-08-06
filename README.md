@@ -37,7 +37,101 @@
 
 
 ## 🗂️ 폴더구조
-
+```
+SKN34-2nd-3Team/
+├── 2nd_project/ 
+├── clawler/ 
+│   ├── __pycache__/
+│   │   └── munpia_crawler.cpython-312.pyc
+│   └── munpia_crawler.py
+├── db/
+│   ├── data/
+│   │   ├── .cache/
+│   │   ├── comment.csv
+│   │   ├── episode.csv
+│   │   ├── novel_ai_evaluation.csv
+│   │   ├── novel_author.csv
+│   │   ├── novel_genre.csv
+│   │   ├── novel_group.csv
+│   │   ├── novel_statistics.csv
+│   │   ├── novel_tag.csv
+│   │   ├── novel.csv
+│   │   └── tag.csv
+│   └── migration/
+│       ├── V0__create_database.sql
+│       ├── V1__create_initial_schema.sql
+│       ├── V2__load_csv_data.sql
+│       ├── V3__create_recommendation_dashboard.sql
+│       └── V4__create_paid_conversion_prediction.sql
+├── docs/
+│   ├── 01. 환경세팅.md
+│   ├── 02. GitHub 협업 가이드.md
+│   ├── 03. Git LFS 가이드.md
+│   └── erd.png
+├── entity/
+│   ├── __pycache__/
+│   ├── __init__.py
+│   ├── comment.py
+│   ├── episode.py
+│   ├── novel_author.py
+│   ├── novel_statistics.py
+│   └── novel.py
+├── pages/
+│   ├── author_novels.py
+│   ├── munpia_apppage.py
+│   ├── novel_basic_info.py
+│   └── recommendation_dashboard.py
+├── repository/
+│   ├── __pycache__/
+│   │   ├── __init__.cpython-312.pyc
+│   │   ├── novel_repository.cpython-312.pyc
+│   │   └── repository.cpython-312.pyc
+│   ├── __init__.py
+│   └── repository.py
+├── research/
+│   ├── model/
+│   │   ├── drop_rate_rf_model.pkl
+│   │   └── drop_rate_scaler.pkl
+│   ├── free_to_paid_drop_model.ipynb
+│   └── model_test.ipynb
+├── scripts/
+│   ├── refresh_recommendation_metrics.py
+│   └── train_paid_conversion_model.py
+├── service/
+│   ├── __pycache__/
+│   │   ├── __init__.cpython-312.pyc
+│   │   ├── novel_prediction_service.cpython-312.pyc
+│   │   ├── novel_service_errors.cpython-312.pyc
+│   │   └── novel_service.cpython-312.pyc
+│   ├── __init__.py
+│   ├── collection_service.py
+│   ├── novel_prediction_service.py
+│   ├── novel_service_errors.py
+│   ├── novel_service.py
+│   └── recommendation_service.py
+├── tests/
+│   ├── test_author_repository.py
+│   ├── test_bootstrap.py
+│   ├── test_collection_page.py
+│   ├── test_collection_repository.py
+│   ├── test_collection_service.py
+│   ├── test_munpia_crawler.py
+│   ├── test_novel_prediction_service.py
+│   ├── test_novel_service.py
+│   └── test_repository_reads.py
+├── .env
+├── .env.example
+├── .gitattributes
+├── .gitignore
+├── bootstrap.py
+├── docker-compose.yml
+├── main.py
+├── pytest.ini
+├── README.md
+├── requirements.txt
+├── test.ipynb
+└── test.py
+```
 
 
 ## ⚙️ ERD
@@ -62,7 +156,8 @@
 내용
 
 > **최대원 **  
-내용
+이번 프로젝트에 관해 팀원들과 의견을 나누고 목표를 정하는 등 유익한 시간이 되었다.
+특히 데이터를 크롤링하고 분석하고 재정리하는 과정은 도움이 되었다. 다만, 정제되지 않은 데이터를 기반으로 타깃을 주제에 맞게 설정하는 과정과 문자를 분석해서 영향력을 넣으려는 과정이 어려웠다. 하물며 머신러닝과 딥러닝으로 모델 비교에서 정확도까지 떨어져 아쉬움이 남는다. 개인적으론 상업성을 목표로 만들어 봤다는 것에서 좋은 경험이 되었다.
 
 
 ## ✏️ 향후 개선 계획
@@ -72,10 +167,7 @@
   - 관리 필요 작품군에서 특정 회차 이탈률이 급증할 경우 담당자에게 슬랙(Slack) 경고 알림을 전송하는 리스크 관리 기능 추가
 
 
-
-
-
-# SKN34-2nd-3Team
+## 실행 방법
 
 애플리케이션의 영속성 계층은 `repository/repository.py`의 MySQL
 `Repository` 하나로 통합되어 있습니다. 실행 중에는 CSV 파일을 직접 읽거나
@@ -83,12 +175,15 @@
 
 ## 최초 데이터베이스 구성
 
-1. `.env.example`을 참고하여 `.env`에 DB 접속 정보를 설정합니다.
-2. 아래 CSV 파일을 `db/data`에 배치합니다.
+#### 1. 환경 변수 설정
+- `.env.example`을 참고하여 `.env`에 DB 접속 정보를 설정합니다.
+#### 2. 데이터 파일 배치
+-  아래 CSV 파일을 `db/data`에 배치합니다.
    `tag.csv`, `novel_genre.csv`, `novel_author.csv`, `novel_group.csv`,
    `novel.csv`, `novel_tag.csv`, `episode.csv`, `novel_statistics.csv`,
    `novel_ai_evaluation.csv`, `comment.csv`
-3. `docker compose up -d`를 실행합니다.
+#### 3. Docker 환경 실행
+- 터미널에서 `docker compose up -d`를 실행하여 MySQL 컨테이너를 구동합니다.
 
 MySQL 컨테이너가 처음 생성될 때 `V1__create_initial_schema.sql`로 테이블을
 생성하고 `V2__load_csv_data.sql`로 CSV 데이터를 DB에 적재합니다. MySQL의
