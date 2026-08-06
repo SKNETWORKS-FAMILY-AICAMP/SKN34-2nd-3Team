@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import html
 import os
 import re
 import sys
 from dataclasses import asdict
 from math import ceil
 from typing import Any
+from urllib.parse import quote, urlparse
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -82,6 +84,67 @@ def format_datetime(value: Any) -> str:
 
 def access_label(value: Any) -> str:
     return "무료 회차" if str(value or "").strip().upper() == "FREE" else "유료 회차"
+
+
+def novel_payment_label(row: dict[str, Any]) -> str:
+    if row.get("free") == 1:
+        return "무료"
+    if row.get("paid_serial") == 1 or row.get("free") == 0:
+        return "유료"
+    return "무료/유료 정보 없음"
+
+
+def render_recent_collected_novels(service: NovelService) -> None:
+    st.subheader("최근 수집 작품")
+    st.caption("가장 최근에 수집된 작품 6개입니다.")
+    rows = service.list_recent_collected_novels(limit=6)
+    if not rows:
+        st.info("최근 수집 작품이 없습니다.")
+        return
+
+    for row in rows:
+        with st.container(border=True):
+            cover_col, body_col = st.columns([1, 3])
+            with cover_col:
+                if row.get("origin_cover_url"):
+                    st.image(row["origin_cover_url"], width="stretch")
+            with body_col:
+                novel_id = quote(str(row["novel_id"]), safe="")
+                title = html.escape(
+                    str(row.get("title") or f"작품 {row['novel_id']}"), quote=True
+                )
+                st.markdown(
+                    f'<h3 class="recent-novel-title">'
+                    f'<a href="/novel_basic_info?url={novel_id}" target="_self">'
+                    f"{title}</a></h3>",
+                    unsafe_allow_html=True,
+                )
+
+                author_name = html.escape(
+                    str(row.get("author_name") or "작가 정보 없음"), quote=True
+                )
+                links = f"작가 : {author_name}"
+                if row.get("author_id"):
+                    author_id = quote(str(row["author_id"]), safe="")
+                    links = (
+                        f'작가 : <a href="/author_novels?author_id={author_id}" '
+                        'target="_self">'
+                        f"{author_name}</a>"
+                    )
+
+                origin_novel_url = str(row.get("origin_novel_url") or "").strip()
+                parsed_origin_url = urlparse(origin_novel_url)
+                if parsed_origin_url.scheme in {"http", "https"} and parsed_origin_url.netloc:
+                    safe_origin_url = html.escape(origin_novel_url, quote=True)
+                    links += (
+                        f' &nbsp;·&nbsp; <a href="{safe_origin_url}" target="_blank" '
+                        'rel="noopener noreferrer">문피아 링크</a>'
+                    )
+                st.markdown(links, unsafe_allow_html=True)
+                st.caption(
+                    f"주 장르 · {row.get('primary_genre_name') or '정보 없음'}"
+                )
+                st.write(novel_payment_label(row))
 
 
 def reaction_description(score: float) -> str:
@@ -1127,6 +1190,7 @@ def render_page() -> None:
         return
 
     query_url = st.query_params.get("url", "")
+    previous_query_url = st.session_state.get("last_query_url", "")
     if (
         "last_query_url" not in st.session_state
         or st.session_state.last_query_url != query_url
@@ -1134,6 +1198,10 @@ def render_page() -> None:
         st.session_state.last_query_url = query_url
         st.session_state.input_url = query_url
         st.session_state.auto_searched = False
+        if not query_url and previous_query_url:
+            st.session_state.pop("has_searched", None)
+            st.session_state.pop("search_target", None)
+            st.session_state.pop("selected_episode_id", None)
 
     user_input = st.text_input(
         "🔍 조회할 소설 ID 또는 작품 URL을 입력하세요:",
@@ -1145,12 +1213,18 @@ def render_page() -> None:
         st.session_state.has_searched = True
         st.session_state.search_target = user_input
         st.session_state.pop("selected_episode_id", None)
+        if str(user_input).strip():
+            st.query_params["url"] = str(user_input).strip()
     elif query_url and not st.session_state.get("auto_searched", False):
         st.session_state.has_searched = True
         st.session_state.search_target = query_url
         st.session_state.auto_searched = True
 
-    if not st.session_state.get("has_searched", False):
+    detail_requested = bool(
+        query_url or is_clicked or st.session_state.get("has_searched", False)
+    )
+    if not detail_requested:
+        render_recent_collected_novels(service)
         return
 
     target_input = st.session_state.get("search_target", user_input)

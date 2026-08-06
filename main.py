@@ -24,10 +24,12 @@ def run() -> None:
     crawler_page = st.Page(
         "pages/munpia_apppage.py",
         title="정보 수집",
+        icon=":material/cloud_download:",
     )
     novel_detail = st.Page(
         "pages/novel_basic_info.py",
         title="소설 분석 대시보드",
+        icon=":material/analytics:",
     )
     author_page = st.Page(
         "pages/author_novels.py",

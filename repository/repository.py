@@ -122,6 +122,55 @@ class Repository:
             rows = cursor.fetchall()
         return [self._row_to_novel(row) for row in rows]
 
+    def list_recent_collected_novels(self, limit: int = 6) -> list[dict[str, Any]]:
+        """Return recently collected novels with card metadata in one query."""
+        if limit <= 0:
+            raise ValueError("limit must be greater than zero")
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                SELECT n.novel_id, n.title, n.origin_cover_url,
+                       n.source_url AS origin_novel_url,
+                       n.author_id,
+                       a.author_name, g.genre_name AS primary_genre_name,
+                       n.free, n.paid_serial, n.collected_at
+                FROM novel AS n
+                LEFT JOIN novel_author AS a ON a.author_id = n.author_id
+                LEFT JOIN novel_genre AS g ON g.genre_id = n.genre_1
+                ORDER BY n.collected_at DESC, n.novel_id DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            return cursor.fetchall()
+
+    def list_top_authors_by_average_view(
+        self, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """Rank authors by the unweighted mean of non-null per-novel views."""
+        if limit <= 0:
+            raise ValueError("limit must be greater than zero")
+        with self._cursor(dictionary=True) as cursor:
+            cursor.execute(
+                """
+                SELECT a.author_id, a.author_name,
+                       SUM(s.view_count) / COUNT(s.view_count) AS average_view_count,
+                       SUM(s.view_count) AS total_view_count,
+                       COUNT(s.view_count) AS reflected_novel_count,
+                       COUNT(n.novel_id) AS total_novel_count
+                FROM novel_author AS a
+                JOIN novel AS n ON n.author_id = a.author_id
+                LEFT JOIN novel_statistics AS s ON s.novel_id = n.novel_id
+                GROUP BY a.author_id, a.author_name
+                HAVING COUNT(s.view_count) > 0
+                ORDER BY average_view_count DESC, reflected_novel_count DESC,
+                         a.author_id ASC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            return cursor.fetchall()
+
     def get_author_analysis(
         self, novel_ids: Sequence[int]
     ) -> dict[int, tuple[float | None, float | None, float | None]]:

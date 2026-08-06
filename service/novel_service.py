@@ -82,6 +82,16 @@ class NovelService:
         self._validate_author_id(author_id)
         return self.repository.get_novels_by_author(author_id)
 
+    def list_recent_collected_novels(self, limit: int = 6) -> list[dict]:
+        if limit <= 0:
+            raise ValueError("limit must be greater than zero")
+        return self.repository.list_recent_collected_novels(limit)
+
+    def list_top_authors_by_average_view(self, limit: int = 10) -> list[dict]:
+        if limit <= 0:
+            raise ValueError("limit must be greater than zero")
+        return self.repository.list_top_authors_by_average_view(limit)
+
     def get_episodes(self, novel_id: int) -> list[Episode]:
         self._validate_novel_id(novel_id)
         return self.repository.get_episodes(novel_id)

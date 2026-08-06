@@ -42,6 +42,36 @@ def render_analysis_score(score: float | None) -> None:
     st.write(analysis_score_label(score))
 
 
+def format_views(value) -> str:
+    if value is None:
+        return "—"
+    return f"{round(float(value)):,}"
+
+
+def render_top_authors(service: NovelService) -> None:
+    st.subheader("작품별 평균 누적 조회수 상위 작가")
+    st.caption("조회수가 있는 작품만 평균과 합계에 반영합니다.")
+    rows = service.list_top_authors_by_average_view(limit=10)
+    if not rows:
+        st.info("표시할 작가가 없습니다.")
+        return
+    for rank, row in enumerate(rows, start=1):
+        with st.container(border=True):
+            st.caption(f"순위 {rank}")
+            st.page_link(
+                "pages/author_novels.py",
+                label=row.get("author_name") or f"작가 {row['author_id']}",
+                query_params={"author_id": str(row["author_id"])},
+            )
+            st.write(f"평균 누적 조회수 · {format_views(row.get('average_view_count'))}")
+            st.write(f"누적 조회수 합계 · {format_views(row.get('total_view_count'))}")
+            st.write(
+                "반영 작품 수/전체 작품 수 · "
+                f"{int(row.get('reflected_novel_count') or 0):,}/"
+                f"{int(row.get('total_novel_count') or 0):,}"
+            )
+
+
 st.set_page_config(page_title="작가 작품 조회", layout="wide")
 st.title("작가 작품 조회")
 st.caption("작가 ID로 현재 연재 중이거나 과거에 연재한 모든 수집 작품을 확인합니다.")
@@ -55,8 +85,13 @@ author_input = st.text_input(
     value=str(query_author_id),
     placeholder="예: 12345",
 )
+is_clicked = st.button("조회", type="primary")
+detail_requested = bool(query_author_id or is_clicked)
 
-if st.button("조회", type="primary") or query_author_id:
+if not detail_requested:
+    render_top_authors(service)
+
+if detail_requested:
     try:
         author_id = service.parse_author_id(author_input)
         author = service.get_author_by_id(author_id)
