@@ -39,77 +39,46 @@
 ## 🗂️ 폴더구조
 ```
 SKN34-2nd-3Team/
-├── 2nd_project/ 
-├── clawler/ 
-│   ├── __pycache__/
-│   │   └── munpia_crawler.cpython-312.pyc
+├── clawler/
 │   └── munpia_crawler.py
 ├── db/
-│   ├── data/
-│   │   ├── .cache/
-│   │   ├── comment.csv
-│   │   ├── episode.csv
-│   │   ├── novel_ai_evaluation.csv
-│   │   ├── novel_author.csv
-│   │   ├── novel_genre.csv
-│   │   ├── novel_group.csv
-│   │   ├── novel_statistics.csv
-│   │   ├── novel_tag.csv
-│   │   ├── novel.csv
-│   │   └── tag.csv
-│   └── migration/
-│       ├── V0__create_database.sql
-│       ├── V1__create_initial_schema.sql
-│       ├── V2__load_csv_data.sql
-│       ├── V3__create_recommendation_dashboard.sql
-│       └── V4__create_paid_conversion_prediction.sql
+│   ├── data/                 # 원시 CSV 데이터셋 저장소
+│   └── migration/            # DB 스키마 및 마이그레이션 SQL
 ├── docs/
 │   ├── 01. 환경세팅.md
 │   ├── 02. GitHub 협업 가이드.md
 │   ├── 03. Git LFS 가이드.md
 │   └── erd.png
 ├── entity/
-│   ├── __pycache__/
 │   ├── __init__.py
 │   ├── comment.py
 │   ├── episode.py
 │   ├── novel_author.py
 │   ├── novel_statistics.py
 │   └── novel.py
-├── pages/
+├── pages/                    # Streamlit 멀티페이지 구성 화면
 │   ├── author_novels.py
 │   ├── munpia_apppage.py
 │   ├── novel_basic_info.py
 │   └── recommendation_dashboard.py
 ├── repository/
-│   ├── __pycache__/
-│   │   ├── __init__.cpython-312.pyc
-│   │   ├── novel_repository.cpython-312.pyc
-│   │   └── repository.cpython-312.pyc
 │   ├── __init__.py
 │   └── repository.py
-├── research/
-│   ├── model/
-│   │   ├── drop_rate_rf_model.pkl
-│   │   └── drop_rate_scaler.pkl
+├── research/                 # 머신러닝 모델 연구 및 노트북
+│   ├── model/                # 학습된 모델(.pkl) 및 스케일러
 │   ├── free_to_paid_drop_model.ipynb
 │   └── model_test.ipynb
-├── scripts/
+├── scripts/                  # 배치 및 모델 학습 자동화 스크립트
 │   ├── refresh_recommendation_metrics.py
 │   └── train_paid_conversion_model.py
-├── service/
-│   ├── __pycache__/
-│   │   ├── __init__.cpython-312.pyc
-│   │   ├── novel_prediction_service.cpython-312.pyc
-│   │   ├── novel_service_errors.cpython-312.pyc
-│   │   └── novel_service.cpython-312.pyc
+├── service/                  # 핵심 비즈니스 로직 및 서비스 레이어
 │   ├── __init__.py
 │   ├── collection_service.py
 │   ├── novel_prediction_service.py
 │   ├── novel_service_errors.py
 │   ├── novel_service.py
 │   └── recommendation_service.py
-├── tests/
+├── tests/                    # 기능 검증용 pytest 단위 테스트
 │   ├── test_author_repository.py
 │   ├── test_bootstrap.py
 │   ├── test_collection_page.py
@@ -119,18 +88,15 @@ SKN34-2nd-3Team/
 │   ├── test_novel_prediction_service.py
 │   ├── test_novel_service.py
 │   └── test_repository_reads.py
-├── .env
 ├── .env.example
 ├── .gitattributes
 ├── .gitignore
 ├── bootstrap.py
 ├── docker-compose.yml
-├── main.py
+├── main.py                   # 애플리케이션 진입점
 ├── pytest.ini
 ├── README.md
-├── requirements.txt
-├── test.ipynb
-└── test.py
+└── requirements.txt
 ```
 
 
