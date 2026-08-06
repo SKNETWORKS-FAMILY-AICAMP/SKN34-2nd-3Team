@@ -3,136 +3,107 @@
 # 웹소설 분석 및 유료 전환 추천 플랫폼
 
 ## 👥 팀 소개
-| 윤성호 | 전진환 | 김현지 | 최대원 |
-|:----------:|:----------:|:----------:|----------:|
-|각자역할작성<br>|<br>|<br>|<br>|
-| [GitHub](https://github.com/Seongho-haru) | [GitHub](https://github.com/dfs32dfs) | [GitHub](https://github.com/HJK013) | [GitHub](https://github.com/wind1484) |
+
+
+| 윤성호                                                                                                                                                                    | 전진환                                                                                                                                                                | 김현지                                                                                                                                                              | 최대원                                                                                                                                                                |
+| :----------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------------------------------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
+| 각자역할작성<br>                                                                                                                                                             | <br>                                                                                                                                                               | <br>                                                                                                                                                             | <br>                                                                                                                                                               |
+| <a href="https://github.com/Seongho-haru"><img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white" alt="윤성호 GitHub"/></a> | <a href="https://github.com/dfs32dfs"><img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white" alt="전진환 GitHub"/></a> | <a href="https://github.com/HJK013"><img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white" alt="김현지 GitHub"/></a> | <a href="https://github.com/wind1484"><img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white" alt="최대원 GitHub"/></a> |
+
 
 ## 📋 프로젝트 개요
-> 개발 기간 : 2026.08.05 - 2026.08.06 
+
+> 개발 기간 : 2026.07.21 - 2026.08.06 
 
 ### 1. 프로젝트명
+
 문피아 웹소설 분석 및 유료 전환 추천 플랫폼 (편집부 분석 서비스)
 
 ### 2. 프로젝트 소개
+
 - 문피아 공개 작품·회차 데이터를 기반으로, 편집부 분석 사용자가 무료 작품 중 유료 전환 검토 후보를 탐색하고 반응 감소 작품을 식별할 수 있도록 지원하는 AI 기반 의사결정 지원 대시보드
 - 유료 전환 시 예상되는 수익성과 타깃 점수를 산정하여, 객관적인 작품 수익화 여부 결정 지원
-- 회차별 독자 이탈률 분석 및 키워드 기반 댓글 감성(긍정/부정/중립) 분류 시각화를 통한 독자 반응 확인 
+- 회차별 독자 이탈률 분석 및 키워드 기반 댓글 감성(긍정/부정/중립) 분류 시각화를 통한 독자 반응 확인
 
 ### 3. 프로젝트 필요성
+
 - 웹소설 시장에서 무료 회차에서 유료 회차로 전환하는 작품 대상을 선택하는 것은 매출에 직결되는 핵심이지만, 기존에는 주관적인 예상에 의존하여 작품을 선별해야 했음
 - 객관적인 데이터(회차별 조회수를 기반으로 한 이탈률, 조회/좋아요/댓글수와 댓글 감성과 같은 독자 반응, 장르, 성별·연령대 비중 등)를 기반으로 한 예측 모델을 통해 편집자가 최종 의사결정을 내릴 수 있는 근거를 제공
 
 ### 4. 프로젝트 목표
+
 - 무료 연재작 대상 유료 전환 타깃 점수 산정 및 전환 후보군 추천
 - 문피아 작품 URL 또는 ID 입력을 통한 작품별 상세정보 및 시각화 분석 화면 구성
 - 머신러닝 기반 유료 전환 예측 모델을 활용한 데이터 기반 예상 조회수 및 낙폭치 시각화
 - 회차별 독자 이탈 구간 및 댓글 감성(긍정/부정/중립) 시각화
 
-
 ## 🧰 기술 스택
-* **Language:** ![Static Badge](https://img.shields.io/badge/Python-3.12.0-%23f8db49?labelColor=4873a4)
-* **Database & Storage:** ![Static Badge](https://img.shields.io/badge/MySQL-CSV-003B57) ![Static Badge](https://img.shields.io/badge/Hugging%20Face-Datasets-FFD21E)
-* **Web Framework:** ![Static Badge](https://img.shields.io/badge/Streamlit-1.60.0-%23FF4B4B)
 
+- **Language:** ![Static Badge](https://img.shields.io/badge/Python-3.12.0-%23f8db49?labelColor=4873a4)
+- **Database &amp; Storage:** ![Static Badge](https://img.shields.io/badge/MySQL-CSV-003B57) ![Static Badge](https://img.shields.io/badge/Hugging%20Face-Datasets-FFD21E)
+- **Web Framework:** ![Static Badge](https://img.shields.io/badge/Streamlit-1.60.0-%23FF4B4B)
 
-## 🗂️ 폴더구조
+## 🗂️ 폴더 구조
+
 ```
 SKN34-2nd-3Team/
 ├── clawler/
-│   └── munpia_crawler.py
+│   └── munpia_crawler.py      # 문피아 작품 및 회차 데이터 수집
 ├── db/
-│   ├── data/                 # 원시 CSV 데이터셋 저장소
-│   └── migration/            # DB 스키마 및 마이그레이션 SQL
-├── docs/
-│   ├── 01. 환경세팅.md
-│   ├── 02. GitHub 협업 가이드.md
-│   ├── 03. Git LFS 가이드.md
-│   └── erd.png
-├── entity/
-│   ├── __init__.py
-│   ├── comment.py
-│   ├── episode.py
-│   ├── novel_author.py
-│   ├── novel_statistics.py
-│   └── novel.py
-├── pages/                    # Streamlit 멀티페이지 구성 화면
-│   ├── author_novels.py
-│   ├── munpia_apppage.py
-│   ├── novel_basic_info.py
-│   └── recommendation_dashboard.py
+│   ├── data/                  # 원본 CSV 데이터 저장
+│   └── migration/             # DB 스키마 생성 및 마이그레이션 SQL
+├── docs/                      # 프로젝트 문서 및 이미지
+├── entity/                    # 계층 간 데이터 전달 객체
+├── pages/                     # Streamlit 멀티페이지 화면
 ├── repository/
 │   ├── __init__.py
-│   └── repository.py
-├── research/                 # 머신러닝 모델 연구 및 노트북
-│   ├── model/                # 학습된 모델(.pkl) 및 스케일러
-│   ├── free_to_paid_drop_model.ipynb
-│   └── model_test.ipynb
-├── scripts/                  # 배치 및 모델 학습 자동화 스크립트
-│   ├── refresh_recommendation_metrics.py
-│   └── train_paid_conversion_model.py
-├── service/                  # 핵심 비즈니스 로직 및 서비스 레이어
-│   ├── __init__.py
-│   ├── collection_service.py
-│   ├── novel_prediction_service.py
-│   ├── novel_service_errors.py
-│   ├── novel_service.py
-│   └── recommendation_service.py
-├── tests/                    # 기능 검증용 pytest 단위 테스트
-│   ├── test_author_repository.py
-│   ├── test_bootstrap.py
-│   ├── test_collection_page.py
-│   ├── test_collection_repository.py
-│   ├── test_collection_service.py
-│   ├── test_munpia_crawler.py
-│   ├── test_novel_prediction_service.py
-│   ├── test_novel_service.py
-│   └── test_repository_reads.py
-├── .env.example
+│   └── repository.py          # DB 연결 및 쿼리 실행
+├── research/                  # 머신러닝 모델 실험 및 노트북
+├── scripts/                   # 데이터 처리 및 모델 학습 스크립트
+├── service/                   # 핵심 비즈니스 로직
+├── tests/                     # pytest 기반 테스트
+├── .env.example               # 환경 변수 설정 예시
 ├── .gitattributes
 ├── .gitignore
-├── bootstrap.py
-├── docker-compose.yml
-├── main.py                   # 애플리케이션 진입점
+├── bootstrap.py               # 데이터 다운로드 및 DB 초기화
+├── docker-compose.yml         # MySQL 컨테이너 구성
+├── main.py                    # Streamlit 애플리케이션 진입점
 ├── pytest.ini
 ├── README.md
 └── requirements.txt
 ```
 
-
 ## ⚙️ ERD
+
 ![erd](./docs/erd.png) 
 
-
 ## 📰 사용 데이터
+
 - 문피아 공개 작품 및 회차 데이터 (크롤링 및 Hugging Face Hub 데이터셋 연동)
 
-## 📌 수행결과  
-
-
+## 📌 수행결과
 
 ## 💭 한 줄 회고
+
 > **윤성호 **  
-이번 프로젝트를 진행하며 GitHub의 프로젝트, 이슈, 포크, PR 등 다양한 기능을 직접 활용해 협업하는 과정을 경험할 수 있어서 뜻깊었다. 다만 이슈 작성 기준과 PR 템플릿이 미리 정해져 있지 않아 작업 내용을 공유하고 관리하는 과정에서 다소 아쉬움이 있었다. 또한 업무를 분배할 때 프론트엔드, 백엔드, DB, AI 모델 학습 및 연구, 데이터 수집처럼 역할과 책임을 명확히 구분하지 않고 모듈별 구현과 연구 작업을 중심으로 나누다 보니, 팀원들의 작업이 겹치거나 일부 업무가 원활하게 진행되지 못했다. 다음 프로젝트에서는 협업 규칙과 업무 영역을 초기에 명확히 정한다면 더욱 체계적이고 효율적으로 프로젝트를 진행할 수 있을 것 같다.
+> 이번 프로젝트를 진행하며 GitHub의 프로젝트, 이슈, 포크, PR 등 다양한 기능을 직접 활용해 협업하는 과정을 경험할 수 있어서 뜻깊었다. 다만 이슈 작성 기준과 PR 템플릿이 미리 정해져 있지 않아 작업 내용을 공유하고 관리하는 과정에서 다소 아쉬움이 있었다. 또한 업무를 분배할 때 프론트엔드, 백엔드, DB, AI 모델 학습 및 연구, 데이터 수집처럼 역할과 책임을 명확히 구분하지 않고 모듈별 구현과 연구 작업을 중심으로 나누다 보니, 팀원들의 작업이 겹치거나 일부 업무가 원활하게 진행되지 못했다. 다음 프로젝트에서는 협업 규칙과 업무 영역을 초기에 명확히 정한다면 더욱 체계적이고 효율적으로 프로젝트를 진행할 수 있을 것 같다.
 
 > **전진환 **  
-내용
+> 내용
 
 > **김현지 **  
-조회수 예측을 위한 머신러닝과 딥러닝 모델을 연구하고 다양한 모델과 옵션을 조합해 최적의 모델을 찾는 작업에서 많은 시행착오를 겪었지만, 그 과정을 통해 배운 점이 많았던 프로젝트였다. 특히 실제 사이트에서 추출한 웹소설 데이터를 다뤄 Streamlit 웹 대시보드로 시각화하여 편집부의 의사결정을 돕는 서비스로 완성해 보며, 데이터 분석과 서비스 개발의 과정을 보다 더 잘 이해하게 되었다.
-
+> 조회수 예측을 위한 머신러닝과 딥러닝 모델을 연구하고 다양한 모델과 옵션을 조합해 최적의 모델을 찾는 작업에서 많은 시행착오를 겪었지만, 그 과정을 통해 배운 점이 많았던 프로젝트였다. 특히 실제 사이트에서 추출한 웹소설 데이터를 다뤄 Streamlit 웹 대시보드로 시각화하여 편집부의 의사결정을 돕는 서비스로 완성해 보며, 데이터 분석과 서비스 개발의 과정을 보다 더 잘 이해하게 되었다.
 
 > **최대원 **  
-이번 프로젝트에 관해 팀원들과 의견을 나누고 목표를 정하는 등 유익한 시간이 되었다.
-특히 데이터를 크롤링하고 분석하고 재정리하는 과정은 도움이 되었다. 다만, 정제되지 않은 데이터를 기반으로 타깃을 주제에 맞게 설정하는 과정과 문자를 분석해서 영향력을 넣으려는 과정이 어려웠다. 하물며 머신러닝과 딥러닝으로 모델 비교에서 정확도까지 떨어져 아쉬움이 남는다. 개인적으론 상업성을 목표로 만들어 봤다는 것에서 좋은 경험이 되었다.
-
+> 이번 프로젝트에 관해 팀원들과 의견을 나누고 목표를 정하는 등 유익한 시간이 되었다.
+> 특히 데이터를 크롤링하고 분석하고 재정리하는 과정은 도움이 되었다. 다만, 정제되지 않은 데이터를 기반으로 타깃을 주제에 맞게 설정하는 과정과 문자를 분석해서 영향력을 넣으려는 과정이 어려웠다. 하물며 머신러닝과 딥러닝으로 모델 비교에서 정확도까지 떨어져 아쉬움이 남는다. 개인적으론 상업성을 목표로 만들어 봤다는 것에서 좋은 경험이 되었다.
 
 ## ✏️ 향후 개선 계획
+
 - NLP 감성 분석 고도화
   - 키워드 기반 감성 분류를 KoBERT 등의 사전학습 모델 기반 파인튜닝으로 업그레이드하여 웹소설 특유의 반어법 및 맥락 정밀 분석
 - 실시간 리스크 알림 서비스 연동
   - 관리 필요 작품군에서 특정 회차 이탈률이 급증할 경우 담당자에게 슬랙(Slack) 경고 알림을 전송하는 리스크 관리 기능 추가
-
 
 ## 실행 방법
 
@@ -143,13 +114,18 @@ SKN34-2nd-3Team/
 ## 최초 데이터베이스 구성
 
 #### 1. 환경 변수 설정
+
 - `.env.example`을 참고하여 `.env`에 DB 접속 정보를 설정합니다.
+
 #### 2. 데이터 파일 배치
--  아래 CSV 파일을 `db/data`에 배치합니다.
-   `tag.csv`, `novel_genre.csv`, `novel_author.csv`, `novel_group.csv`,
-   `novel.csv`, `novel_tag.csv`, `episode.csv`, `novel_statistics.csv`,
-   `novel_ai_evaluation.csv`, `comment.csv`
+
+- 아래 CSV 파일을 `db/data`에 배치합니다.
+`tag.csv`, `novel_genre.csv`, `novel_author.csv`, `novel_group.csv`,
+`novel.csv`, `novel_tag.csv`, `episode.csv`, `novel_statistics.csv`,
+`novel_ai_evaluation.csv`, `comment.csv`
+
 #### 3. Docker 환경 실행
+
 - 터미널에서 `docker compose up -d`를 실행하여 MySQL 컨테이너를 구동합니다.
 
 MySQL 컨테이너가 처음 생성될 때 `V1__create_initial_schema.sql`로 테이블을
