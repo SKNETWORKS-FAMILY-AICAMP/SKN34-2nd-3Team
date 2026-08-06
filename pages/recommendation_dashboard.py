@@ -140,9 +140,6 @@ ranking_frame = pd.DataFrame(
         "평균 이탈률": [value / 100 for value in dropout_values],
         "추천·선호": [int(row["preference_count"]) for row in recommendations],
         "연재 회차": [int(row["chapter_count"]) for row in recommendations],
-        "긍정 댓글": [int(row["positive_count"]) for row in recommendations],
-        "부정 댓글": [int(row["negative_count"]) for row in recommendations],
-        "중립 댓글": [int(row["neutral_count"]) for row in recommendations],
     }
 )
 
@@ -153,7 +150,6 @@ st.dataframe(
     column_config={
         "작품명": st.column_config.ButtonColumn(
             "작품명",
-            pinned=True,
             key="recommendation_novel_button",
         ),
         "작가": st.column_config.ButtonColumn(
@@ -171,9 +167,6 @@ st.dataframe(
         "예상 유료 이탈률": st.column_config.NumberColumn(format="percent"),
         "평균 이탈률": st.column_config.NumberColumn(format="percent"),
         "추천·선호": st.column_config.NumberColumn(format="localized"),
-        "긍정 댓글": st.column_config.NumberColumn(format="localized"),
-        "부정 댓글": st.column_config.NumberColumn(format="localized"),
-        "중립 댓글": st.column_config.NumberColumn(format="localized"),
     },
 )
 
